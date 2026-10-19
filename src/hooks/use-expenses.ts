@@ -56,6 +56,9 @@ export interface UpdateExpenseInput {
   notes?: string;
   categoryId?: string;
   paidBy?: string;
+  groupId?: string;
+  sourceType?: SourceType;
+  sourceId?: string;
   originalAmountMinor?: number;
   originalCurrency?: string;
   splitType?: SplitType;
@@ -289,9 +292,11 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         queryClient.setQueryData(queryKey, context.previousExpenses);
       }
     },
-    onSettled: () => {
+    onSettled: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
+      void queryClient.invalidateQueries({ queryKey: ['expense'] });
+      void queryClient.invalidateQueries({ queryKey: ['expense-splits'] });
     },
   });
 
@@ -312,7 +317,16 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
         ...(input.paidBy !== undefined ? { paidBy: input.paidBy } : {}),
-        ...(input.originalAmountMinor !== undefined ? { originalAmountMinor: input.originalAmountMinor } : {}),
+        ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
+        ...(input.sourceType !== undefined ? { sourceType: input.sourceType } : {}),
+        ...(input.sourceId !== undefined ? { sourceId: input.sourceId } : {}),
+        ...(input.originalAmountMinor !== undefined
+          ? {
+              originalAmountMinor: input.originalAmountMinor,
+              amountMinor: input.originalAmountMinor,
+              reportingAmountMinor: input.originalAmountMinor,
+            }
+          : {}),
         ...(input.originalCurrency !== undefined ? { originalCurrency: input.originalCurrency.toUpperCase() } : {}),
         ...(input.splitType !== undefined ? { splitType: input.splitType } : {}),
         ...(input.participants !== undefined ? { participants: input.participants } : {}),
@@ -385,9 +399,11 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         queryClient.setQueryData(queryKey, context.previousExpenses);
       }
     },
-    onSettled: () => {
+    onSettled: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
+      void queryClient.invalidateQueries({ queryKey: ['expense'] });
+      void queryClient.invalidateQueries({ queryKey: ['expense-splits'] });
     },
   });
 
@@ -431,9 +447,11 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         queryClient.setQueryData(queryKey, context.previousExpenses);
       }
     },
-    onSettled: () => {
+    onSettled: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
+      void queryClient.invalidateQueries({ queryKey: ['expense'] });
+      void queryClient.invalidateQueries({ queryKey: ['expense-splits'] });
     },
   });
 

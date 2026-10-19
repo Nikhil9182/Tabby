@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -79,6 +80,8 @@ type ExpenseFormData = z.infer<typeof expenseFormSchema>;
 export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const navigate = useNavigate();
   const routeParams = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
+  const queryGroupId = searchParams.get('groupId');
   const expenseId = propExpenseId || routeParams.id;
   const isEditing = Boolean(expenseId);
 
@@ -121,7 +124,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       amount: '',
       currency: defaultCurrency,
       expenseDate: todayStr,
-      groupId: 'personal',
+      groupId: queryGroupId || 'personal',
       categoryId: 'cat_other',
       paidBy: currentUserId,
       notes: '',
@@ -137,34 +140,54 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     watchedGroupId !== 'personal' ? watchedGroupId : ''
   );
 
-  // Determine eligible participants based on group
+  // Determine eligible participants based on group and existing data
   const availableMembers = useMemo(() => {
-    if (watchedGroupId === 'personal') {
-      return [
-        {
-          id: currentUserId,
-          name: currentUser?.name || currentUser?.email || 'You',
-        },
-      ];
-    }
+    const list: Array<{ id: string; name: string }> = [];
 
-    if (groupMemberships && groupMemberships.length > 0) {
-      return groupMemberships.map((gm) => {
+    if (watchedGroupId !== 'personal' && groupMemberships && groupMemberships.length > 0) {
+      groupMemberships.forEach((gm) => {
         const u = users.find((user) => user.id === gm.userId);
-        return {
+        list.push({
           id: gm.userId,
           name: gm.userId === currentUserId ? 'You' : u?.name || u?.email || gm.userId,
-        };
+        });
+      });
+    } else {
+      list.push({
+        id: currentUserId,
+        name: currentUser?.name || currentUser?.email || 'You',
+      });
+      users.forEach((u) => {
+        if (!list.some((m) => m.id === u.id)) {
+          list.push({
+            id: u.id,
+            name: u.id === currentUserId ? 'You' : u.name || u.email || u.id,
+          });
+        }
       });
     }
 
-    return [
-      {
-        id: currentUserId,
-        name: currentUser?.name || currentUser?.email || 'You',
-      },
-    ];
-  }, [watchedGroupId, groupMemberships, users, currentUserId, currentUser]);
+    // Always ensure existing expense payer and participants are listed
+    if (existingExpense?.paidBy && !list.some((m) => m.id === existingExpense.paidBy)) {
+      const u = users.find((user) => user.id === existingExpense.paidBy);
+      list.push({
+        id: existingExpense.paidBy,
+        name: existingExpense.paidBy === currentUserId ? 'You' : u?.name || u?.email || existingExpense.paidBy,
+      });
+    }
+
+    selectedParticipants.forEach((pId) => {
+      if (!list.some((m) => m.id === pId)) {
+        const u = users.find((user) => user.id === pId);
+        list.push({
+          id: pId,
+          name: pId === currentUserId ? 'You' : u?.name || u?.email || pId,
+        });
+      }
+    });
+
+    return list;
+  }, [watchedGroupId, groupMemberships, users, currentUserId, currentUser, existingExpense, selectedParticipants]);
 
   // When group changes, update participants list if not editing or initially
   useEffect(() => {
@@ -413,6 +436,9 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           notes: data.notes,
           categoryId: data.categoryId,
           paidBy: data.paidBy,
+          groupId: isGroup ? data.groupId : undefined,
+          sourceType: isGroup ? 'group' : 'personal',
+          sourceId: isGroup ? data.groupId : currentUserId,
           originalAmountMinor: totalAmountMinor,
           originalCurrency: data.currency,
           splitType,
@@ -448,6 +474,34 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   };
 
   const isSubmitting = isCreating || isUpdating;
+
+  if (isEditing && isLoadingExisting) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6 pb-16">
+        <Skeleton className="h-10 w-48" />
+        <Card className="p-6 space-y-4">
+          <Skeleton className="h-8 w-3/4" />
+          <Skeleton className="h-12 w-1/3" />
+          <Skeleton className="h-24 w-full" />
+        </Card>
+      </div>
+    );
+  }
+
+  if (isEditing && !isLoadingExisting && !existingExpense) {
+    return (
+      <div className="max-w-2xl mx-auto py-12 text-center space-y-4">
+        <div className="h-12 w-12 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="h-6 w-6" />
+        </div>
+        <h2 className="text-xl font-bold">Expense not found</h2>
+        <p className="text-sm text-muted-foreground">The expense you are trying to edit does not exist or was deleted.</p>
+        <Button onClick={() => navigate('/expenses')} variant="outline">
+          Back to Expenses
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-16">

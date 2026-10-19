@@ -8,6 +8,7 @@ const WelcomePage = lazy(() => import("@/features/auth/welcome-page"));
 const DashboardPage = lazy(() => import("@/features/dashboard/dashboard-page"));
 const ExpensesPage = lazy(() => import("@/features/expenses/expenses-page"));
 const ExpenseNewPage = lazy(() => import("@/features/expenses/expense-new-page"));
+const ExpenseForm = lazy(() => import("@/features/expenses/expense-form"));
 const ExpenseDetailPage = lazy(() => import("@/features/expenses/expense-detail-page"));
 const GroupsPage = lazy(() => import("@/features/groups/groups-page"));
 const GroupNewPage = lazy(() => import("@/features/groups/group-new-page"));
@@ -36,8 +37,9 @@ export function AppRouter() {
 
             {/* Expenses */}
             <Route path="/expenses" element={<ExpensesPage />} />
-            <Route path="/expenses/new" element={<ExpenseNewPage />} />
+            <Route path="/expenses/new" element={<ExpenseForm />} />
             <Route path="/expenses/:id" element={<ExpenseDetailPage />} />
+            <Route path="/expenses/:id/edit" element={<ExpenseForm />} />
 
             {/* Groups & Sub-routes */}
             <Route path="/groups" element={<GroupsPage />} />

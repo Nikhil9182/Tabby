@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Receipt, Search, Filter, Calendar } from "lucide-react";
+import { Plus, Receipt, Search, Filter, Calendar, Edit2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Button } from "@/components/ui/button";
@@ -96,13 +96,28 @@ export function ExpensesPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end shrink-0 pl-3">
-                  <span className="text-sm font-bold text-foreground">
-                    ${amountFormatted} {expense.originalCurrency || "USD"}
-                  </span>
-                  <Badge variant="outline" className="text-[10px] mt-1 capitalize">
-                    {expense.splitType || "Equal"}
-                  </Badge>
+                <div className="flex items-center gap-3 shrink-0 pl-3">
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm font-bold text-foreground">
+                      ${amountFormatted} {expense.originalCurrency || "USD"}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] mt-1 capitalize">
+                      {expense.splitType || "Equal"}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/80 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Edit expense"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigate(`/expenses/${expense.id}/edit`);
+                    }}
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </Link>
             );
