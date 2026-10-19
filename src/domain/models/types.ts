@@ -589,3 +589,6 @@ export interface ConflictResolution {
   type: 'use_local' | 'use_remote' | 'merge' | 'manual';
   resolved: boolean;
 }
+
+export type { PairwiseBalance } from '../balances/balance-engine';
+

@@ -198,4 +198,9 @@ export function useSync(): SyncContextType {
   return context;
 }
 
+export function useSyncStatus(): SyncStatus {
+  const { syncStatus } = useSync();
+  return syncStatus;
+}
+
 export { SyncContext };

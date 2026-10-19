@@ -67,7 +67,7 @@ export function useCurrency(): UseCurrencyResult {
         return Math.round(amountMinor * rate);
       }
 
-      const result = await exchangeRateService.convert(amountMinor, normFrom, normTo);
+      const result = await exchangeRateService.convertAmount(amountMinor, normFrom, normTo);
       return result.convertedMinor;
     },
     []
@@ -130,7 +130,7 @@ export function useExchangeRate(from: string, to: string, date?: string): UseExc
           source: 'identity',
         };
       }
-      return await exchangeRateService.convert(100, normFrom, normTo, date);
+      return await exchangeRateService.convertAmount(100, normFrom, normTo, date);
     },
     enabled: !!normFrom && !!normTo,
     staleTime: 1000 * 60 * 60 * 12, // 12 hours

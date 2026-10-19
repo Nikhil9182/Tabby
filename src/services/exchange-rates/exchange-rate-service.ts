@@ -93,6 +93,7 @@ export class ExchangeRateService {
         rateDate: today,
         rate: 1.0,
         fetchedAt: new Date().toISOString(),
+        source: 'identity',
       };
     }
 
@@ -113,6 +114,7 @@ export class ExchangeRateService {
         rateDate: data.date || new Date().toISOString().slice(0, 10),
         rate: data.rate,
         fetchedAt: new Date().toISOString(),
+        source: 'frankfurter',
       };
 
       await db.exchangeRateCache.put(entry);
@@ -139,6 +141,7 @@ export class ExchangeRateService {
         rateDate: date,
         rate: 1.0,
         fetchedAt: new Date().toISOString(),
+        source: 'identity',
       };
     }
 
@@ -166,6 +169,7 @@ export class ExchangeRateService {
         rateDate: data.date || date,
         rate: data.rate,
         fetchedAt: new Date().toISOString(),
+        source: 'frankfurter',
       };
 
       await db.exchangeRateCache.put(entry);
@@ -193,6 +197,7 @@ export class ExchangeRateService {
         rateDate: date || new Date().toISOString().slice(0, 10),
         rate: 1.0,
         fetchedAt: new Date().toISOString(),
+        source: 'identity',
       };
     }
 
@@ -266,6 +271,15 @@ export class ExchangeRateService {
       rateDate: rateEntry.rateDate,
       source,
     };
+  }
+
+  async convert(
+    amountMinor: number,
+    fromCurrency: string,
+    toCurrency: string,
+    date?: string
+  ): Promise<CurrencyConversionResult> {
+    return this.convertAmount(amountMinor, fromCurrency, toCurrency, date);
   }
 }
 

@@ -171,7 +171,7 @@ export function parseMoney(input: string, currency: string): number {
     const parts = str.split(',');
     if (parts.length === 2 && parts[1].length !== 3) {
       decSep = ',';
-    } else if (parts.length === 2 && decimals !== 3) {
+    } else if (parts.length === 2 && decimals === 3) {
       decSep = ',';
     } else {
       decSep = '.';

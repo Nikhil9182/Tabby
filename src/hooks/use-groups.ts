@@ -210,6 +210,7 @@ export function useGroups() {
   return {
     groups,
     isLoading,
+    isCreating: createGroupMutation.isPending,
     error,
     createGroup: (input: CreateGroupInput) => createGroupMutation.mutateAsync(input),
     updateGroup: (input: UpdateGroupInput) => updateGroupMutation.mutateAsync(input),
@@ -261,7 +262,7 @@ export function useGroup(groupId: string) {
           allSplits.push(...splits);
         })
       );
-      return calculateGroupBalances(expenses, allSplits, settlements, group.currency);
+      return calculateGroupBalances(expenses, allSplits, settlements, group.currency || 'USD');
     },
     enabled: !!group,
   });
