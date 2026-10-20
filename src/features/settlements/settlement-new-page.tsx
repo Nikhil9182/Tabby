@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeftRight, Check, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,16 @@ export function SettlementNewPage() {
   const { users } = useUsers();
   const { user: currentUser } = useCurrentUser();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const currentId = currentUser?.id || user?.sub || "user_self";
+  const paramToUser = searchParams.get("toUserId");
+  const paramAmountMinor = searchParams.get("amountMinor");
+  const initialAmount = paramAmountMinor ? (parseInt(paramAmountMinor, 10) / 100).toFixed(2) : "";
 
   const [fromUser, setFromUser] = useState(currentId);
-  const [toUser, setToUser] = useState("");
-  const [amountStr, setAmountStr] = useState("");
+  const [toUser, setToUser] = useState(paramToUser || "");
+  const [amountStr, setAmountStr] = useState(initialAmount || "");
   const [currency, setCurrency] = useState("USD");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");

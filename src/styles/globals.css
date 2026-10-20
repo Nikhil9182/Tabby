@@ -2,79 +2,85 @@
 
 @layer base {
   :root {
-    /* Off-white background (#FAFAF9 light) */
-    --background: #fafaf9;
-    /* Dark readable typography */
-    --foreground: #18181b;
+    /* Off-white background from reference design */
+    --background: #f8f9fa;
+    --foreground: #0b0c0e;
 
     --card: #ffffff;
-    --card-foreground: #18181b;
+    --card-foreground: #0b0c0e;
 
     --popover: #ffffff;
-    --popover-foreground: #18181b;
+    --popover-foreground: #0b0c0e;
 
-    /* Restrained accent color: Calm teal (#0F766E) */
-    --primary: #0f766e;
+    /* Vibrant Electric Blue from reference UI */
+    --primary: #0055ff;
     --primary-foreground: #ffffff;
 
-    --secondary: #f4f4f5;
-    --secondary-foreground: #18181b;
+    /* Lime Green Highlight Banner (#D4FF00) */
+    --lime: #d4ff00;
+    --lime-foreground: #000000;
 
-    --muted: #f4f4f5;
-    --muted-foreground: #71717a;
+    --secondary: #f1f3f5;
+    --secondary-foreground: #0b0c0e;
 
-    --accent: #f0fdfa;
-    --accent-foreground: #115e59;
+    --muted: #f1f3f5;
+    --muted-foreground: #6b7280;
+
+    --accent: #eef2ff;
+    --accent-foreground: #0055ff;
 
     --destructive: #ef4444;
     --destructive-foreground: #ffffff;
 
-    --border: #e4e4e7;
-    --input: #e4e4e7;
-    --ring: #0f766e;
+    --border: #e8eaed;
+    --input: #e8eaed;
+    --ring: #0055ff;
 
-    --chart-1: #0f766e;
-    --chart-2: #14b8a6;
+    --chart-1: #0055ff;
+    --chart-2: #d4ff00;
     --chart-3: #f97316;
     --chart-4: #8b5cf6;
     --chart-5: #ec4899;
 
-    --radius: 0.5rem;
+    --radius: 1rem;
   }
 
   .dark {
-    /* Dark mode background */
-    --background: #09090b;
-    --foreground: #fafafa;
+    /* Deep Obsidian Dark Background from reference dark mode */
+    --background: #0e0f12;
+    --foreground: #f8f9fa;
 
-    --card: #121215;
-    --card-foreground: #fafafa;
+    --card: #18191e;
+    --card-foreground: #f8f9fa;
 
-    --popover: #121215;
-    --popover-foreground: #fafafa;
+    --popover: #18191e;
+    --popover-foreground: #f8f9fa;
 
-    /* Calm teal in dark mode */
-    --primary: #14b8a6;
-    --primary-foreground: #042f2e;
+    /* Electric Blue in dark mode */
+    --primary: #0055ff;
+    --primary-foreground: #ffffff;
 
-    --secondary: #27272a;
-    --secondary-foreground: #fafafa;
+    --lime: #d4ff00;
+    --lime-foreground: #000000;
 
-    --muted: #27272a;
-    --muted-foreground: #a1a1aa;
+    --secondary: #22242a;
+    --secondary-foreground: #f8f9fa;
 
-    --accent: #132e2b;
-    --accent-foreground: #5eead4;
+    --muted: #22242a;
+    --muted-foreground: #9ca3af;
 
-    --destructive: #7f1d1d;
-    --destructive-foreground: #fef2f2;
+    --accent: #182038;
+    --accent-foreground: #60a5fa;
 
-    --border: #27272a;
-    --input: #27272a;
-    --ring: #14b8a6;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
 
-    --chart-1: #14b8a6;
-    --chart-2: #2dd4bf;
+    --border: #26282e;
+    --input: #26282e;
+    --ring: #0055ff;
+
+    --chart-1: #3b82f6;
+    --chart-2: #d4ff00;
     --chart-3: #fb923c;
     --chart-4: #a78bfa;
     --chart-5: #f472b6;
@@ -102,6 +108,8 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-lime: var(--lime);
+  --color-lime-foreground: var(--lime-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -119,8 +127,9 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 6px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+  --radius-2xl: calc(var(--radius) + 16px);
 }

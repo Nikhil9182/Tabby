@@ -167,7 +167,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       });
     }
 
-    // Always ensure existing expense payer and participants are listed
+    // Always ensure existing expense payer is included
     if (existingExpense?.paidBy && !list.some((m) => m.id === existingExpense.paidBy)) {
       const u = users.find((user) => user.id === existingExpense.paidBy);
       list.push({
@@ -176,25 +176,33 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       });
     }
 
-    selectedParticipants.forEach((pId) => {
-      if (!list.some((m) => m.id === pId)) {
-        const u = users.find((user) => user.id === pId);
-        list.push({
-          id: pId,
-          name: pId === currentUserId ? 'You' : u?.name || u?.email || pId,
-        });
-      }
-    });
+    // Ensure any participant from existing expense is included
+    if (existingExpense?.participants) {
+      existingExpense.participants.forEach((pId) => {
+        if (!list.some((m) => m.id === pId)) {
+          const u = users.find((user) => user.id === pId);
+          list.push({
+            id: pId,
+            name: pId === currentUserId ? 'You' : u?.name || u?.email || pId,
+          });
+        }
+      });
+    }
 
     return list;
-  }, [watchedGroupId, groupMemberships, users, currentUserId, currentUser, existingExpense, selectedParticipants]);
+  }, [watchedGroupId, groupMemberships, users, currentUserId, currentUser, existingExpense]);
 
-  // When group changes, update participants list if not editing or initially
+  // When group changes, update participants list if not editing
   useEffect(() => {
     if (!isEditing && availableMembers.length > 0) {
       const allIds = availableMembers.map((m) => m.id);
-      setSelectedParticipants(allIds);
-      // Initialize equal percentages
+      setSelectedParticipants((prev) => {
+        if (prev.length === allIds.length && prev.every((id) => allIds.includes(id))) {
+          return prev;
+        }
+        return allIds;
+      });
+
       const equalPct = Math.floor(100 / allIds.length);
       const newPct: Record<string, number> = {};
       const newShares: Record<string, number> = {};
@@ -205,11 +213,14 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       setPercentages(newPct);
       setShares(newShares);
     }
-  }, [watchedGroupId, availableMembers, isEditing]);
+  }, [watchedGroupId, isEditing, availableMembers.length]);
 
-  // Prepopulate if editing
+  // Prepopulate if editing (once when expense is loaded)
+  const hasPopulatedRef = React.useRef(false);
+
   useEffect(() => {
-    if (existingExpense) {
+    if (isEditing && existingExpense && !hasPopulatedRef.current) {
+      hasPopulatedRef.current = true;
       const curr = existingExpense.originalCurrency || defaultCurrency;
       reset({
         description: existingExpense.description,
@@ -245,7 +256,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         setShares(shareMap);
       }
     }
-  }, [existingExpense, existingSplits, defaultCurrency, reset]);
+  }, [isEditing, existingExpense, existingSplits, defaultCurrency, reset]);
 
   // Total amount in integer minor units
   const totalAmountMinor = useMemo(() => {

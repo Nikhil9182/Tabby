@@ -82,7 +82,7 @@ export function PageHeader({
           )}
 
           <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground">
               {title}
             </h1>
             {description && (

@@ -50,9 +50,10 @@ export function AppRouter() {
             {/* Friends */}
             <Route path="/friends" element={<FriendsPage />} />
 
-            {/* Settlements */}
+            {/* Settlements & Activity */}
             <Route path="/settlements" element={<SettlementsPage />} />
             <Route path="/settlements/new" element={<SettlementNewPage />} />
+            <Route path="/activity" element={<Navigate to="/settlements" replace />} />
 
             {/* Reports */}
             <Route path="/reports" element={<ReportsPage />} />
