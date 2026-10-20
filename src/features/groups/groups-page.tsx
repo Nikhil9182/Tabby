@@ -50,16 +50,16 @@ export function GroupsPage() {
   }, [groups, search]);
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 sm:space-y-8 pb-16 animate-in fade-in-50 duration-300">
       <PageHeader
         title="Groups"
         description="Manage shared expenses across trips, apartments, and friend circles."
         actions={
           <Button
             onClick={() => navigate('/groups/new')}
-            className="shadow-xs font-semibold gap-1.5"
+            className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 stroke-[2.5]" />
             <span>New Group</span>
           </Button>
         }
@@ -68,21 +68,21 @@ export function GroupsPage() {
       {/* Search Bar */}
       {groups.length > 0 && (
         <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search groups..."
-            className="pl-9 h-10 bg-card/60"
+            placeholder="Search groups by name..."
+            className="pl-10 h-11 rounded-2xl bg-card border-border/80 focus-visible:ring-1 focus-visible:ring-primary shadow-2xs text-sm font-medium"
           />
         </div>
       )}
 
       {/* Content */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-xl" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-56 w-full rounded-3xl" />
           ))}
         </div>
       ) : filteredGroups.length === 0 ? (
@@ -92,7 +92,7 @@ export function GroupsPage() {
             title="No groups found"
             description={`No groups matching "${search}".`}
             action={
-              <Button variant="outline" size="sm" onClick={() => setSearch('')}>
+              <Button variant="outline" size="sm" onClick={() => setSearch('')} className="rounded-xl font-bold">
                 Clear Search
               </Button>
             }
@@ -103,7 +103,10 @@ export function GroupsPage() {
             title="No groups yet"
             description="Create a group to easily split dinner bills, shared rent, or vacation expenses with multiple people."
             action={
-              <Button onClick={() => navigate('/groups/new')} size="sm">
+              <Button
+                onClick={() => navigate('/groups/new')}
+                className="rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold"
+              >
                 <Plus className="h-4 w-4 mr-1.5" />
                 Create Your First Group
               </Button>
@@ -111,7 +114,7 @@ export function GroupsPage() {
           />
         )
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredGroups.map((group) => {
             const groupExpenses = expenses.filter((e) => e.groupId === group.id || e.sourceId === group.id);
             const groupSplits = allSplitsList.filter((s) => groupExpenses.some((e) => e.id === s.expenseId));
@@ -129,17 +132,16 @@ export function GroupsPage() {
             const myBalance = computed.balances.get(currentUserId);
             const netBalanceMinor = myBalance?.netBalance ?? 0;
 
-            // Members
-            const groupMembers = group.memberIds
-              ? users.filter((u) => group.memberIds!.includes(u.id))
-              : [];
+            const groupMembers = (group.memberIds || [])
+              .map((id) => users.find((u) => u.id === id))
+              .filter(Boolean);
 
             return (
               <GroupCard
                 key={group.id}
                 group={group}
-                members={groupMembers}
-                memberCount={group.memberIds?.length || (groupMembers.length > 0 ? groupMembers.length : 1)}
+                members={groupMembers as any}
+                memberCount={group.memberIds?.length || 1}
                 netBalanceMinor={netBalanceMinor}
                 expenseCount={groupExpenses.length}
                 currency={group.currency || defaultCurrency}

@@ -224,55 +224,53 @@ export function GroupDetailPage() {
   }
 
   return (
-    <div className="space-y-6 pb-16">
+    <div className="space-y-6 sm:space-y-8 pb-16 animate-in fade-in-50 duration-300">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border/40">
         <div className="flex items-start sm:items-center gap-3">
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={() => navigate('/groups')}
-            className="rounded-full -ml-2 text-muted-foreground hover:text-foreground shrink-0"
+            className="rounded-full -ml-2 text-muted-foreground hover:text-foreground shrink-0 h-10 w-10"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-5 w-5" />
           </Button>
 
           <div className="space-y-1">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground">
                 {group.name}
               </h1>
-              <Badge variant="outline" className="font-mono text-xs uppercase">
+              <Badge variant="outline" className="font-mono text-xs uppercase font-bold">
                 {groupCurrency}
               </Badge>
               {group.isArchived && (
-                <Badge variant="secondary" className="text-xs uppercase">
+                <Badge variant="secondary" className="text-xs uppercase font-bold">
                   Archived
                 </Badge>
               )}
             </div>
             {group.description && (
-              <p className="text-sm text-muted-foreground max-w-xl">{group.description}</p>
+              <p className="text-sm text-muted-foreground max-w-xl font-medium">{group.description}</p>
             )}
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
           <Button
-            size="sm"
             onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-            className="shadow-xs font-semibold gap-1.5"
+            className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 stroke-[2.5]" />
             <span>Add Expense</span>
           </Button>
 
           <Button
             variant="outline"
-            size="sm"
             onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
-            className="gap-1.5"
+            className="h-11 px-4 rounded-2xl font-bold gap-2"
           >
             <ArrowRightLeft className="h-4 w-4" />
             <span>Settle Up</span>
@@ -282,23 +280,23 @@ export function GroupDetailPage() {
 
       {/* Group Navigation Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-11 bg-muted/50 p-1">
-          <TabsTrigger value="overview" className="text-xs sm:text-sm">
+        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-12 bg-muted/60 p-1 rounded-2xl">
+          <TabsTrigger value="overview" className="text-xs sm:text-sm font-bold rounded-xl">
             Overview
           </TabsTrigger>
-          <TabsTrigger value="expenses" className="text-xs sm:text-sm">
+          <TabsTrigger value="expenses" className="text-xs sm:text-sm font-bold rounded-xl">
             Expenses ({expenses.length})
           </TabsTrigger>
-          <TabsTrigger value="balances" className="text-xs sm:text-sm">
+          <TabsTrigger value="balances" className="text-xs sm:text-sm font-bold rounded-xl">
             Balances
           </TabsTrigger>
-          <TabsTrigger value="members" className="text-xs sm:text-sm">
+          <TabsTrigger value="members" className="text-xs sm:text-sm font-bold rounded-xl">
             Members ({members.length})
           </TabsTrigger>
-          <TabsTrigger value="settlements" className="text-xs sm:text-sm">
+          <TabsTrigger value="settlements" className="text-xs sm:text-sm font-bold rounded-xl">
             Settlements ({settlements.length})
           </TabsTrigger>
-          <TabsTrigger value="settings" className="text-xs sm:text-sm">
+          <TabsTrigger value="settings" className="text-xs sm:text-sm font-bold rounded-xl">
             Settings
           </TabsTrigger>
         </TabsList>
@@ -306,57 +304,56 @@ export function GroupDetailPage() {
         {/* 1. OVERVIEW TAB */}
         <TabsContent value="overview" className="space-y-6 mt-0">
           {/* Net Balance Status Card */}
-          <Card
+          <div
             className={cn(
-              'border-border/60 shadow-xs relative overflow-hidden',
-              myNetMinor > 0 && 'border-emerald-500/30 bg-emerald-500/[0.03]',
-              myNetMinor < 0 && 'border-rose-500/30 bg-rose-500/[0.03]'
+              'rounded-3xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs relative overflow-hidden transition-all',
+              myNetMinor > 0 && 'border-emerald-500/40 bg-emerald-500/[0.04]',
+              myNetMinor < 0 && 'border-rose-500/40 bg-rose-500/[0.04]'
             )}
           >
-            <CardContent className="p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Your Group Net Balance
-                  </span>
-                  <div className="flex items-baseline gap-2">
-                    <CurrencyDisplay
-                      amountMinor={myNetMinor}
-                      currency={groupCurrency}
-                      colorize
-                      showSign
-                      size="xl"
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {myNetMinor > 0
-                      ? 'In this group, other members owe you'
-                      : myNetMinor < 0
-                        ? 'In this group, you owe money'
-                        : 'You are completely settled up in this group'}
-                  </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Your Group Net Balance
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <CurrencyDisplay
+                    amountMinor={myNetMinor}
+                    currency={groupCurrency}
+                    colorize
+                    showSign
+                    size="xl"
+                    className="font-black"
+                  />
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-                  >
-                    <Plus className="h-4 w-4 mr-1.5" />
-                    Add Expense
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
-                  >
-                    <ArrowRightLeft className="h-4 w-4 mr-1.5" />
-                    Settle Up
-                  </Button>
-                </div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {myNetMinor > 0
+                    ? 'In this group, other members owe you'
+                    : myNetMinor < 0
+                      ? 'In this group, you owe money'
+                      : 'You are completely settled up in this group'}
+                </p>
               </div>
-            </CardContent>
-          </Card>
+
+              <div className="flex items-center gap-2.5">
+                <Button
+                  onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
+                  className="rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold h-10 px-4"
+                >
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Add Expense
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
+                  className="rounded-2xl font-bold h-10 px-4"
+                >
+                  <ArrowRightLeft className="h-4 w-4 mr-1.5" />
+                  Settle Up
+                </Button>
+              </div>
+            </div>
+          </div>
 
           {/* Simplified Debts Preview */}
           {balances?.simplifiedDebts && balances.simplifiedDebts.length > 0 && (

@@ -12,9 +12,12 @@ import {
   Receipt,
   CheckCircle2,
   Calendar,
+  Plane,
+  Coffee,
+  Heart,
+  FolderPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useExpenses } from "@/hooks/use-expenses";
 import { useGroups } from "@/hooks/use-groups";
@@ -25,7 +28,7 @@ import { formatMoney } from "@/domain/money/money";
 import { calculateUserBalances, type PairwiseBalance } from "@/domain/balances/balance-engine";
 import { cn } from "@/lib/utils";
 
-// --- Vector Graphic Illustrations for Group Cards ---
+// --- Vector Graphic Illustrations for Group Cards (Theme-reactive) ---
 
 function PalmTreesIcon({ className }: { className?: string }) {
   return (
@@ -36,20 +39,16 @@ function PalmTreesIcon({ className }: { className?: string }) {
       strokeWidth="2.2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn("pointer-events-none select-none", className)}
+      className={cn("pointer-events-none select-none transition-colors", className)}
     >
-      {/* Sun */}
       <circle cx="88" cy="28" r="14" strokeWidth="2.2" strokeDasharray="3 3" />
-      {/* Island base */}
       <path d="M10 92 C 40 86, 80 86, 110 92" />
-      {/* Left Palm Tree */}
       <path d="M42 90 Q 48 55 36 28" strokeWidth="2.8" />
       <path d="M36 28 Q 18 20 8 32" />
       <path d="M36 28 Q 25 10 32 4" />
       <path d="M36 28 Q 48 12 56 24" />
       <path d="M36 28 Q 50 36 46 48" />
       <path d="M36 28 Q 24 38 18 50" />
-      {/* Right Palm Tree */}
       <path d="M68 90 Q 64 60 74 36" strokeWidth="2.8" />
       <path d="M74 36 Q 58 28 50 40" />
       <path d="M74 36 Q 66 18 76 12" />
@@ -68,15 +67,11 @@ function HouseOutlineIcon({ className }: { className?: string }) {
       strokeWidth="2.4"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn("pointer-events-none select-none", className)}
+      className={cn("pointer-events-none select-none transition-colors", className)}
     >
-      {/* Roof */}
       <path d="M15 48 L 50 18 L 85 48" strokeWidth="2.8" />
-      {/* Chimney */}
       <path d="M68 33 V 22 H 78 V 42" />
-      {/* House Body */}
       <path d="M22 46 V 84 H 78 V 46" />
-      {/* Door */}
       <path d="M42 84 V 58 H 58 V 84" />
     </svg>
   );
@@ -91,17 +86,60 @@ function SparklesOutlineIcon({ className }: { className?: string }) {
       strokeWidth="2.4"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn("pointer-events-none select-none", className)}
+      className={cn("pointer-events-none select-none transition-colors", className)}
     >
-      {/* Large Sparkle */}
       <path d="M45 10 C 45 32, 62 48, 85 48 C 62 48, 45 65, 45 88 C 45 65, 28 48, 5 48 C 28 48, 45 32, 45 10 Z" />
-      {/* Small Top Sparkle */}
       <path d="M78 8 C 78 16, 85 22, 94 22 C 85 22, 78 29, 78 37 C 78 29, 71 22, 62 22 C 71 22, 78 16, 78 8 Z" />
-      {/* Small Bottom Sparkle */}
       <path d="M22 65 C 22 72, 28 78, 36 78 C 28 78, 22 84, 22 92 C 22 84, 16 78, 8 78 C 16 78, 22 72, 22 65 Z" />
     </svg>
   );
 }
+
+function MountainOutlineIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn("pointer-events-none select-none transition-colors", className)}
+    >
+      <path d="M10 85 L 45 25 L 75 75 L 85 60 L 95 85 Z" />
+      <path d="M35 42 L 45 50 L 55 42" />
+      <circle cx="78" cy="25" r="8" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+function CoffeeOutlineIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn("pointer-events-none select-none transition-colors", className)}
+    >
+      <path d="M20 35 H 70 V 70 C 70 78, 62 84, 52 84 H 38 C 28 84, 20 78, 20 70 Z" />
+      <path d="M70 45 H 80 C 86 45, 90 50, 90 56 C 90 62, 86 67, 80 67 H 70" />
+      <path d="M32 20 Q 35 12 32 6" />
+      <path d="M45 20 Q 48 12 45 6" />
+      <path d="M58 20 Q 61 12 58 6" />
+    </svg>
+  );
+}
+
+const VECTOR_ICONS = [
+  PalmTreesIcon,
+  HouseOutlineIcon,
+  SparklesOutlineIcon,
+  MountainOutlineIcon,
+  CoffeeOutlineIcon,
+];
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -128,20 +166,30 @@ export function DashboardPage() {
     return map;
   }, [users, currentUserId]);
 
+  // Flatten all splits for calculations
+  const allSplitsList = useMemo(() => {
+    return Object.values(splits).flat();
+  }, [splits]);
+
   // Compute live user balance totals
   const userBalance = useMemo(() => {
     if (!expenses || !settlements) {
       return { totalOwed: 0, totalOwedToYou: 0, netBalance: 0, pairwise: [] as PairwiseBalance[] };
     }
-
-    // Flatten all splits
-    const allSplitsList = Object.values(splits).flat();
     return calculateUserBalances(currentUserId, expenses, allSplitsList, settlements);
-  }, [currentUserId, expenses, splits, settlements]);
+  }, [currentUserId, expenses, allSplitsList, settlements]);
 
   // Determine if user has recorded live data yet
-  const hasExpenses = expenses && expenses.length > 0;
-  const hasGroups = groups && groups.length > 0;
+  const activeExpenses = useMemo(() => {
+    return (expenses || []).filter((e) => !e.deletedAt);
+  }, [expenses]);
+
+  const activeGroups = useMemo(() => {
+    return (groups || []).filter((g) => !g.isArchived);
+  }, [groups]);
+
+  const hasExpenses = activeExpenses.length > 0;
+  const hasGroups = activeGroups.length > 0;
 
   // Formatting currency
   const curr = defaultCurrency || "INR";
@@ -149,153 +197,184 @@ export function DashboardPage() {
   const netSign = userBalance.netBalance > 0 ? "+" : userBalance.netBalance < 0 ? "−" : "";
   const netSubtitle =
     userBalance.netBalance > 0
-      ? "Coming back to you"
+      ? `Coming back to you across ${activeGroups.length > 0 ? activeGroups.length : 1} group${activeGroups.length === 1 ? "" : "s"}`
       : userBalance.netBalance < 0
-      ? "You owe in total"
-      : "All tabs clear";
+      ? `You owe in total across ${activeGroups.length > 0 ? activeGroups.length : 1} group${activeGroups.length === 1 ? "" : "s"}`
+      : hasExpenses
+      ? "All tabs are clear! You are fully settled up."
+      : "Start by recording your first expense or creating a group.";
+
+  // Sort groups by recency of expenses added
+  const sortedGroups = useMemo(() => {
+    return [...activeGroups].sort((a, b) => {
+      const getLatestTime = (grpId: string, createdAt?: string) => {
+        const grpExpenses = activeExpenses.filter((e) => e.groupId === grpId);
+        if (grpExpenses.length === 0) return new Date(createdAt || 0).getTime();
+        return Math.max(
+          ...grpExpenses.map((e) => new Date(e.createdAt || e.expenseDate).getTime())
+        );
+      };
+      return getLatestTime(b.id, b.createdAt) - getLatestTime(a.id, a.createdAt);
+    });
+  }, [activeGroups, activeExpenses]);
+
+  // Group balances calculation
+  const groupCardsData = useMemo(() => {
+    return sortedGroups.map((g, idx) => {
+      const groupExpenses = activeExpenses.filter((e) => e.groupId === g.id);
+      const groupSettlements = (settlements || []).filter((s) => s.groupId === g.id && !s.deletedAt);
+      const grpBalance = calculateUserBalances(currentUserId, groupExpenses, allSplitsList, groupSettlements);
+
+      const isPositive = grpBalance.netBalance > 0;
+      const isNegative = grpBalance.netBalance < 0;
+      const displayAmount =
+        isPositive
+          ? `+${formatMoney(grpBalance.netBalance, g.currency || curr)}`
+          : isNegative
+          ? `−${formatMoney(Math.abs(grpBalance.netBalance), g.currency || curr)}`
+          : formatMoney(0, g.currency || curr);
+
+      const statusText =
+        isPositive
+          ? "Coming back to you"
+          : isNegative
+          ? "You owe"
+          : "All settled up";
+
+      const IconComponent = VECTOR_ICONS[idx % VECTOR_ICONS.length];
+
+      return {
+        group: g,
+        displayAmount,
+        statusText,
+        isPositive,
+        isNegative,
+        memberCount: g.memberIds?.length ?? 1,
+        IconComponent,
+      };
+    });
+  }, [sortedGroups, activeExpenses, settlements, currentUserId, allSplitsList, curr]);
 
   // People to settle with (filtered from pairwise debt)
   const settleList = useMemo(() => {
-    if (userBalance.pairwise.length > 0) {
-      return userBalance.pairwise
-        .filter((p) => p.amountMinor > 0)
-        .map((p) => {
-          const isUserDebtor = p.fromUserId === currentUserId;
-          const otherUserId = isUserDebtor ? p.toUserId : p.fromUserId;
-          const otherUser = users.find((u) => u.id === otherUserId);
-          const name = otherUser?.name || "Friend";
-          const inits = name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase();
-          return {
-            id: otherUserId,
-            name,
-            initials: inits,
-            amountMinor: p.amountMinor,
-            type: isUserDebtor ? ("owe" as const) : ("owed" as const),
-            avatarBg: isUserDebtor ? "bg-[#FFD6A5] text-[#7A3E00]" : "bg-[#D4FF00] text-black",
-          };
-        });
-    }
-
-    // Default sample settle items if no debts yet (mirroring screenshot design)
-    return [
-      {
-        id: "maya",
-        name: "Maya",
-        initials: "MA",
-        amountMinor: 120000,
-        type: "owe" as const,
-        avatarBg: "bg-[#FFD6A5] text-[#7A3E00]",
-      },
-      {
-        id: "sam",
-        name: "Sam",
-        initials: "SK",
-        amountMinor: 95000,
-        type: "owe" as const,
-        avatarBg: "bg-[#D4FF00] text-black",
-      },
-    ];
-  }, [userBalance.pairwise, currentUserId, users]);
-
-  // Display recent activity items
-  const recentActivityList = useMemo(() => {
-    if (hasExpenses) {
-      return expenses.slice(0, 5).map((exp) => {
-        const grp = groups?.find((g) => g.id === exp.groupId);
-        const payer = users.find((u) => u.id === exp.paidBy);
-        const isCurrentPayer = exp.paidBy === currentUserId;
-        const payerName = isCurrentPayer ? "You" : payer?.name || "Friend";
-        const payerInits = isCurrentPayer
-          ? "AK"
-          : payerName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
-
-        // Icon based on category or keyword
-        let Icon = Utensils;
-        let iconBg = "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400";
-        const descLower = exp.description.toLowerCase();
-
-        if (descLower.includes("grocer") || descLower.includes("suppl")) {
-          Icon = ShoppingCart;
-          iconBg = "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400";
-        } else if (descLower.includes("taxi") || descLower.includes("airport") || descLower.includes("cab")) {
-          Icon = Car;
-          iconBg = "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400";
-        }
-
+    return userBalance.pairwise
+      .filter((p) => p.amountMinor > 0)
+      .map((p) => {
+        const isUserDebtor = p.fromUserId === currentUserId;
+        const otherUserId = isUserDebtor ? p.toUserId : p.fromUserId;
+        const otherUser = users.find((u) => u.id === otherUserId);
+        const name = otherUser?.name || "Friend";
+        const inits = name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase() || "FR";
         return {
-          id: exp.id,
-          date: new Date(exp.expenseDate).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          }),
-          description: exp.description,
-          subtext: exp.notes || (grp ? "Shared split" : "Personal expense"),
-          groupName: grp?.name || "General",
-          paidBy: payerName,
-          paidByInitials: payerInits,
-          paidByBg: isCurrentPayer
-            ? "bg-[#0055FF] text-white"
-            : "bg-emerald-200 text-emerald-900 dark:bg-emerald-800 dark:text-emerald-100",
-          amount: formatMoney(exp.originalAmountMinor, exp.originalCurrency),
-          icon: Icon,
-          iconBg,
-          isReal: true,
+          id: otherUserId,
+          name,
+          initials: inits,
+          amountMinor: p.amountMinor,
+          type: isUserDebtor ? ("owe" as const) : ("owed" as const),
+          avatarBg: isUserDebtor
+            ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-700/50"
+            : "bg-[#D4FF00] text-black",
+          fromUserId: p.fromUserId,
+          toUserId: p.toUserId,
+          currency: p.currency || curr,
         };
       });
-    }
+  }, [userBalance.pairwise, currentUserId, users, curr]);
 
-    // Default sample activity matching the screenshot exactly
-    return [
-      {
-        id: "sample-1",
-        date: "12 Oct 2026",
-        description: "Dinner at Olive",
-        subtext: "Team dinner",
-        groupName: "Goa Getaway",
-        paidBy: "You",
-        paidByInitials: "AK",
-        paidByBg: "bg-[#0055FF] text-white",
-        amount: "₹2,400",
-        icon: Utensils,
-        iconBg: "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400",
-        isReal: false,
-      },
-      {
-        id: "sample-2",
-        date: "10 Oct 2026",
-        description: "Groceries",
-        subtext: "House supplies",
-        groupName: "Maple House",
-        paidBy: "Sam",
-        paidByInitials: "SK",
-        paidByBg: "bg-[#D4FF00] text-black",
-        amount: "₹1,700",
-        icon: ShoppingCart,
-        iconBg: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
-        isReal: false,
-      },
-      {
-        id: "sample-3",
-        date: "8 Oct 2026",
-        description: "Airport taxi",
-        subtext: "To the villa",
-        groupName: "Goa Getaway",
-        paidBy: "Maya",
-        paidByInitials: "MA",
-        paidByBg: "bg-[#FFD6A5] text-[#7A3E00]",
-        amount: "₹1,200",
-        icon: Car,
-        iconBg: "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400",
-        isReal: false,
-      },
-    ];
-  }, [hasExpenses, expenses, groups, users, currentUserId]);
+  // Display recent activity items derived from real expenses
+  const recentActivityList = useMemo(() => {
+    return activeExpenses.slice(0, 6).map((exp) => {
+      const grp = activeGroups.find((g) => g.id === exp.groupId);
+      const payer = users.find((u) => u.id === exp.paidBy);
+      const isCurrentPayer = exp.paidBy === currentUserId;
+      const payerName = isCurrentPayer ? "You" : payer?.name || "Friend";
+      const payerInits = isCurrentPayer
+        ? "YOU"
+        : payerName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "FR";
+
+      // Icon and color badge that reacts properly to dark & light modes
+      let Icon = Utensils;
+      let iconBg =
+        "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border dark:border-amber-800/40";
+      const descLower = exp.description.toLowerCase();
+
+      if (
+        descLower.includes("grocer") ||
+        descLower.includes("suppl") ||
+        descLower.includes("market") ||
+        descLower.includes("supermarket")
+      ) {
+        Icon = ShoppingCart;
+        iconBg =
+          "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border dark:border-emerald-800/40";
+      } else if (
+        descLower.includes("taxi") ||
+        descLower.includes("airport") ||
+        descLower.includes("cab") ||
+        descLower.includes("uber") ||
+        descLower.includes("toll") ||
+        descLower.includes("car")
+      ) {
+        Icon = Car;
+        iconBg =
+          "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 dark:border dark:border-blue-800/40";
+      } else if (
+        descLower.includes("rent") ||
+        descLower.includes("hotel") ||
+        descLower.includes("stay") ||
+        descLower.includes("house")
+      ) {
+        Icon = Home;
+        iconBg =
+          "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border dark:border-indigo-800/40";
+      } else if (
+        descLower.includes("flight") ||
+        descLower.includes("plane") ||
+        descLower.includes("trip")
+      ) {
+        Icon = Plane;
+        iconBg =
+          "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300 dark:border dark:border-cyan-800/40";
+      } else if (
+        descLower.includes("coffee") ||
+        descLower.includes("tea") ||
+        descLower.includes("cafe")
+      ) {
+        Icon = Coffee;
+        iconBg =
+          "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border dark:border-amber-800/40";
+      } else if (!descLower.includes("dinner") && !descLower.includes("lunch") && !descLower.includes("food")) {
+        Icon = Receipt;
+        iconBg =
+          "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:border dark:border-slate-700/40";
+      }
+
+      return {
+        id: exp.id,
+        date: new Date(exp.expenseDate).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+        description: exp.description,
+        subtext: exp.notes || (grp ? grp.name : "Personal expense"),
+        groupName: grp?.name || "General",
+        paidBy: payerName,
+        paidByInitials: payerInits,
+        paidByBg: isCurrentPayer
+          ? "bg-[#0055FF] text-white"
+          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-800/50",
+        amount: formatMoney(exp.originalAmountMinor, exp.originalCurrency),
+        icon: Icon,
+        iconBg,
+      };
+    });
+  }, [activeExpenses, activeGroups, users, currentUserId]);
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-in fade-in-50 duration-300">
-      {/* 1. HERO HEADER ROW */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1">
+    <div className="space-y-6 sm:space-y-8 animate-in fade-in-50 duration-300 pb-16">
+      {/* 1. HERO HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1 sm:pt-2">
         <div>
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-foreground">
             Good times. <span className="text-[#0055FF]">Clear tabs.</span>
@@ -323,7 +402,7 @@ export function DashboardPage() {
           {/* Main Net Amount */}
           <div className="flex items-center gap-4 sm:gap-6 flex-wrap sm:flex-nowrap">
             <span className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-black select-none">
-              {hasExpenses ? `${netSign}${formattedNet}` : "+₹6,300"}
+              {hasExpenses ? `${netSign}${formattedNet}` : formatMoney(0, curr)}
             </span>
 
             <div className="space-y-0.5">
@@ -331,7 +410,7 @@ export function DashboardPage() {
                 Your net balance
               </p>
               <p className="text-xs sm:text-sm text-black/75 font-semibold">
-                {hasExpenses ? netSubtitle : "Coming back to you"}
+                {netSubtitle}
               </p>
             </div>
           </div>
@@ -344,7 +423,7 @@ export function DashboardPage() {
             {/* People Owe You */}
             <div className="space-y-0.5">
               <p className="text-xl sm:text-2xl font-black text-black">
-                {hasExpenses ? formatMoney(userBalance.totalOwedToYou, curr) : "₹8,450"}
+                {formatMoney(userBalance.totalOwedToYou, curr)}
               </p>
               <p className="text-xs sm:text-sm text-black/75 font-semibold">People owe you</p>
             </div>
@@ -355,7 +434,7 @@ export function DashboardPage() {
             {/* You Owe */}
             <div className="space-y-0.5">
               <p className="text-xl sm:text-2xl font-black text-black">
-                {hasExpenses ? formatMoney(userBalance.totalOwed, curr) : "₹2,150"}
+                {formatMoney(userBalance.totalOwed, curr)}
               </p>
               <p className="text-xs sm:text-sm text-black/75 font-semibold">You owe</p>
             </div>
@@ -372,104 +451,199 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 3. MIDDLE ROW: 3 GROUP CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
-        {/* Card 1: Electric Blue Feature Card (Goa Getaway) */}
-        <Link
-          to={hasGroups && groups[0] ? `/groups/${groups[0].id}` : "/groups"}
-          className="group rounded-3xl bg-[#0052FF] text-white p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between min-h-[200px] sm:min-h-[220px] transition-all hover:-translate-y-1 shadow-sm"
-        >
-          {/* Top Info */}
-          <div className="flex items-start justify-between relative z-10">
-            <div>
-              <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white group-hover:underline">
-                {hasGroups && groups[0] ? groups[0].name : "Goa Getaway"}
-              </h3>
-              <p className="text-xs text-white/80 font-medium mt-0.5">
-                {hasGroups && groups[0] ? `${groups[0].memberIds?.length ?? 0} members` : "6 members"}
-              </p>
-            </div>
-            <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center group-hover:bg-white/25 transition-colors">
-              <ArrowRight className="h-4 w-4 text-white" />
-            </div>
+      {/* 3. MIDDLE ROW: RECENT GROUPS & ACTION */}
+      {hasGroups ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
+              Recent groups
+            </h2>
+            <Link
+              to="/groups"
+              className="text-xs sm:text-sm font-bold text-[#0055FF] hover:underline flex items-center gap-1"
+            >
+              <span>See all groups</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
 
-          {/* Bottom Info */}
-          <div className="relative z-10 pt-6">
-            <p className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              +₹4,800
+          {/* On Mobile: Only show 1 group (the most recent one) */}
+          <div className="block sm:hidden">
+            {groupCardsData[0] && (() => {
+              const item = groupCardsData[0];
+              const Icon = item.IconComponent;
+              return (
+                <Link
+                  to={`/groups/${item.group.id}`}
+                  className="group rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[200px] shadow-sm bg-[#0052FF] text-white"
+                >
+                  <div className="flex items-start justify-between relative z-10">
+                    <div className="min-w-0 pr-2">
+                      <h3 className="text-2xl font-black tracking-tight truncate text-white group-hover:underline">
+                        {item.group.name}
+                      </h3>
+                      <p className="text-xs font-medium mt-0.5 text-white/80">
+                        {item.memberCount} member{item.memberCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <div className="h-8 w-8 rounded-full flex items-center justify-center bg-white/15 shrink-0">
+                      <ArrowRight className="h-4 w-4 text-white" />
+                    </div>
+                  </div>
+
+                  <div className="relative z-10 pt-6">
+                    <p className="text-3xl font-black tracking-tight text-white">
+                      {item.displayAmount}
+                    </p>
+                    <p className="text-xs font-medium mt-0.5 text-white/80">
+                      {item.statusText}
+                    </p>
+                  </div>
+
+                  <Icon className="absolute right-[-10px] bottom-[-10px] w-32 h-32 pointer-events-none select-none text-white/20" />
+                </Link>
+              );
+            })()}
+          </div>
+
+          {/* On Tablet & PC: Show up to 3 groups */}
+          <div className="hidden sm:grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+            {groupCardsData.slice(0, 3).map((item, idx) => {
+              const Icon = item.IconComponent;
+              const isFeatured = idx === 0;
+
+              return (
+                <Link
+                  key={item.group.id}
+                  to={`/groups/${item.group.id}`}
+                  className={cn(
+                    "group rounded-3xl p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between min-h-[200px] sm:min-h-[220px] transition-all hover:-translate-y-1 shadow-xs",
+                    isFeatured
+                      ? "bg-[#0052FF] text-white shadow-sm"
+                      : "bg-card border border-border/80 text-foreground"
+                  )}
+                >
+                  {/* Top Info */}
+                  <div className="flex items-start justify-between relative z-10">
+                    <div className="min-w-0 pr-2">
+                      <h3
+                        className={cn(
+                          "text-xl sm:text-2xl font-black tracking-tight truncate",
+                          isFeatured
+                            ? "text-white group-hover:underline"
+                            : "text-foreground group-hover:text-[#0055FF] transition-colors"
+                        )}
+                      >
+                        {item.group.name}
+                      </h3>
+                      <p
+                        className={cn(
+                          "text-xs font-medium mt-0.5",
+                          isFeatured ? "text-white/80" : "text-muted-foreground"
+                        )}
+                      >
+                        {item.memberCount} member{item.memberCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <div
+                      className={cn(
+                        "h-8 w-8 rounded-full flex items-center justify-center transition-colors shrink-0",
+                        isFeatured
+                          ? "bg-white/15 group-hover:bg-white/25"
+                          : "bg-muted group-hover:bg-primary/10"
+                      )}
+                    >
+                      <ArrowRight
+                        className={cn(
+                          "h-4 w-4",
+                          isFeatured
+                            ? "text-white"
+                            : "text-muted-foreground group-hover:text-primary"
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bottom Info */}
+                  <div className="relative z-10 pt-6">
+                    <p
+                      className={cn(
+                        "text-3xl sm:text-4xl font-black tracking-tight",
+                        isFeatured ? "text-white" : "text-foreground"
+                      )}
+                    >
+                      {item.displayAmount}
+                    </p>
+                    <p
+                      className={cn(
+                        "text-xs font-medium mt-0.5",
+                        isFeatured ? "text-white/80" : "text-muted-foreground"
+                      )}
+                    >
+                      {item.statusText}
+                    </p>
+                  </div>
+
+                  {/* Vector line art graphic: reacts cleanly to dark/light theme */}
+                  <Icon
+                    className={cn(
+                      "absolute right-[-10px] bottom-[-10px] w-32 h-32 pointer-events-none select-none transition-colors",
+                      isFeatured
+                        ? "text-white/20 sm:text-white/25"
+                        : "text-foreground/10 dark:text-foreground/15"
+                    )}
+                  />
+                </Link>
+              );
+            })}
+
+            {/* If less than 3 groups, render a "+ Add Group" card on tablet/desktop */}
+            {groupCardsData.length < 3 && (
+              <Link
+                to="/groups/new"
+                className="rounded-3xl border-2 border-dashed border-border hover:border-primary/50 bg-card/40 hover:bg-card/80 p-6 sm:p-7 flex flex-col items-center justify-center text-center min-h-[200px] sm:min-h-[220px] transition-all hover:-translate-y-1 group"
+              >
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <FolderPlus className="h-6 w-6 stroke-[2.2]" />
+                </div>
+                <h3 className="font-bold text-base text-foreground group-hover:text-primary transition-colors">
+                  Create new group
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
+                  Organize trips, apartments, and friend circles with split balances.
+                </p>
+              </Link>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Empty Groups: hidden on mobile per user request, visible on PC/tablets */
+        <div className="hidden sm:flex rounded-3xl bg-card border border-border/80 p-6 sm:p-8 flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden">
+          <div className="space-y-2 text-center sm:text-left relative z-10">
+            <Badge className="bg-[#0055FF] text-white hover:bg-[#0055FF] font-semibold text-xs">
+              Getting started
+            </Badge>
+            <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+              Create your first shared group
+            </h3>
+            <p className="text-sm text-muted-foreground max-w-lg">
+              Tabby helps you split dinners, trips, and household bills with friends and family without awkward spreadsheets.
             </p>
-            <p className="text-xs text-white/80 font-medium mt-0.5">Coming back to you</p>
           </div>
 
-          {/* Palm trees line art graphic */}
-          <PalmTreesIcon className="absolute right-[-10px] bottom-[-10px] w-36 h-32 text-white/20 sm:text-white/25" />
-        </Link>
-
-        {/* Card 2: Clean Card (Maple House) */}
-        <Link
-          to={hasGroups && groups[1] ? `/groups/${groups[1].id}` : "/groups"}
-          className="group rounded-3xl bg-card border border-border/80 text-foreground p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between min-h-[200px] sm:min-h-[220px] transition-all hover:-translate-y-1 shadow-xs"
-        >
-          {/* Top Info */}
-          <div className="flex items-start justify-between relative z-10">
-            <div>
-              <h3 className="text-xl sm:text-2xl font-black tracking-tight text-foreground group-hover:text-[#0055FF] transition-colors">
-                {hasGroups && groups[1] ? groups[1].name : "Maple House"}
-              </h3>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                {hasGroups && groups[1] ? `${groups[1].memberIds?.length ?? 0} members` : "5 members"}
-              </p>
-            </div>
-            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-            </div>
+          <div className="flex items-center gap-3 relative z-10 shrink-0">
+            <Button
+              onClick={() => navigate("/groups/new")}
+              className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Create Group</span>
+            </Button>
           </div>
 
-          {/* Bottom Info */}
-          <div className="relative z-10 pt-6">
-            <p className="text-3xl sm:text-4xl font-black text-foreground tracking-tight">
-              −₹2,150
-            </p>
-            <p className="text-xs text-muted-foreground font-medium mt-0.5">You owe</p>
-          </div>
-
-          {/* House line art graphic */}
-          <HouseOutlineIcon className="absolute right-1 bottom-1 w-28 h-28 text-foreground/15 dark:text-foreground/20" />
-        </Link>
-
-        {/* Card 3: Clean Card (Weekend Crew) */}
-        <Link
-          to={hasGroups && groups[2] ? `/groups/${groups[2].id}` : "/groups"}
-          className="group rounded-3xl bg-card border border-border/80 text-foreground p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between min-h-[200px] sm:min-h-[220px] transition-all hover:-translate-y-1 shadow-xs"
-        >
-          {/* Top Info */}
-          <div className="flex items-start justify-between relative z-10">
-            <div>
-              <h3 className="text-xl sm:text-2xl font-black tracking-tight text-foreground group-hover:text-[#0055FF] transition-colors">
-                {hasGroups && groups[2] ? groups[2].name : "Weekend Crew"}
-              </h3>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                {hasGroups && groups[2] ? `${groups[2].memberIds?.length ?? 0} members` : "4 members"}
-              </p>
-            </div>
-            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-            </div>
-          </div>
-
-          {/* Bottom Info */}
-          <div className="relative z-10 pt-6">
-            <p className="text-3xl sm:text-4xl font-black text-foreground tracking-tight">
-              +₹3,650
-            </p>
-            <p className="text-xs text-muted-foreground font-medium mt-0.5">Coming back to you</p>
-          </div>
-
-          {/* Sparkles line art graphic */}
-          <SparklesOutlineIcon className="absolute right-2 bottom-1 w-28 h-28 text-foreground/15 dark:text-foreground/20" />
-        </Link>
-      </div>
+          <PalmTreesIcon className="absolute right-[-15px] bottom-[-20px] w-48 h-48 text-foreground/5 pointer-events-none select-none" />
+        </div>
+      )}
 
       {/* 4. TWO-COLUMN SECTION: RECENT ACTIVITY & SETTLE UP */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -488,78 +662,100 @@ export function DashboardPage() {
           </div>
 
           {/* Activity Table Headers */}
-          <div className="hidden sm:grid grid-cols-12 text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 border-b border-border/40">
-            <div className="col-span-2">Date</div>
-            <div className="col-span-4">Description</div>
-            <div className="col-span-3">Group</div>
-            <div className="col-span-2">Paid by</div>
-            <div className="col-span-1 text-right">Amount</div>
-          </div>
+          {recentActivityList.length > 0 && (
+            <div className="hidden sm:grid grid-cols-12 text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 border-b border-border/40">
+              <div className="col-span-2">Date</div>
+              <div className="col-span-4">Description</div>
+              <div className="col-span-3">Group</div>
+              <div className="col-span-2">Paid by</div>
+              <div className="col-span-1 text-right">Amount</div>
+            </div>
+          )}
 
           {/* Rows List */}
-          <div className="divide-y divide-border/40">
-            {recentActivityList.map((item) => {
-              const Icon = item.icon || Utensils;
-              const linkTo = item.isReal ? `/expenses/${item.id}` : "/expenses";
+          {recentActivityList.length > 0 ? (
+            <div className="divide-y divide-border/40">
+              {recentActivityList.map((item) => {
+                const Icon = item.icon;
 
-              return (
-                <Link
-                  key={item.id}
-                  to={linkTo}
-                  className="group flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center py-3.5 hover:bg-muted/40 rounded-xl px-2 -mx-2 transition-colors gap-2 sm:gap-0"
-                >
-                  {/* Date */}
-                  <div className="col-span-2 text-xs text-muted-foreground font-medium">
-                    {item.date}
-                  </div>
-
-                  {/* Description & Icon */}
-                  <div className="col-span-4 flex items-center gap-3 min-w-0">
-                    <div
-                      className={cn(
-                        "h-10 w-10 rounded-full flex items-center justify-center shrink-0 shadow-2xs",
-                        item.iconBg
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
+                return (
+                  <Link
+                    key={item.id}
+                    to={`/expenses/${item.id}`}
+                    className="group flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center py-3.5 hover:bg-muted/40 rounded-xl px-2 -mx-2 transition-colors gap-2 sm:gap-0"
+                  >
+                    {/* Date */}
+                    <div className="col-span-2 text-xs text-muted-foreground font-medium">
+                      {item.date}
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-foreground truncate group-hover:text-[#0055FF] transition-colors">
-                        {item.description}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">{item.subtext}</p>
+
+                    {/* Description & Icon */}
+                    <div className="col-span-4 flex items-center gap-3 min-w-0">
+                      <div
+                        className={cn(
+                          "h-10 w-10 rounded-full flex items-center justify-center shrink-0 shadow-2xs transition-colors",
+                          item.iconBg
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-foreground truncate group-hover:text-[#0055FF] transition-colors">
+                          {item.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">{item.subtext}</p>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Group Name */}
-                  <div className="col-span-3 text-xs sm:text-sm text-foreground/85 font-medium truncate">
-                    {item.groupName}
-                  </div>
-
-                  {/* Paid By Avatar & Name */}
-                  <div className="col-span-2 flex items-center gap-2">
-                    <div
-                      className={cn(
-                        "h-6 w-6 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0",
-                        item.paidByBg
-                      )}
-                    >
-                      {item.paidByInitials}
+                    {/* Group Name */}
+                    <div className="col-span-3 text-xs sm:text-sm text-foreground/85 font-medium truncate">
+                      {item.groupName}
                     </div>
-                    <span className="text-xs sm:text-sm font-medium text-foreground truncate">
-                      {item.paidBy}
-                    </span>
-                  </div>
 
-                  {/* Amount + Arrow */}
-                  <div className="col-span-1 flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto font-bold text-sm text-foreground">
-                    <span>{item.amount}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+                    {/* Paid By Avatar & Name */}
+                    <div className="col-span-2 flex items-center gap-2">
+                      <div
+                        className={cn(
+                          "h-6 w-6 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0",
+                          item.paidByBg
+                        )}
+                      >
+                        {item.paidByInitials}
+                      </div>
+                      <span className="text-xs sm:text-sm font-medium text-foreground truncate">
+                        {item.paidBy}
+                      </span>
+                    </div>
+
+                    {/* Amount + Arrow */}
+                    <div className="col-span-1 flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto font-bold text-sm text-foreground">
+                      <span>{item.amount}</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            /* Real Empty State for Expenses */
+            <div className="py-12 text-center space-y-3">
+              <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
+                <Receipt className="h-6 w-6" />
+              </div>
+              <h3 className="font-bold text-base text-foreground">No expenses recorded yet</h3>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Once you record personal or shared expenses, they will appear here with dynamic balances and settlement recommendations.
+              </p>
+              <Button
+                size="sm"
+                onClick={() => navigate("/expenses/new")}
+                className="mt-2 bg-[#0055FF] hover:bg-[#0055FF]/90 text-white rounded-xl font-bold"
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                Add your first expense
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Settle up (lg:col-span-4) */}
@@ -576,53 +772,76 @@ export function DashboardPage() {
             </Link>
           </div>
 
-          {/* Settle Up People List */}
-          <div className="space-y-4">
-            {settleList.map((person) => {
-              const formattedAmt = formatMoney(person.amountMinor, curr);
+          {/* Settle Up People List or Clean Settled State */}
+          {settleList.length > 0 ? (
+            <div className="space-y-3">
+              {settleList.map((person) => {
+                const formattedAmt = formatMoney(person.amountMinor, person.currency);
 
-              return (
-                <div
-                  key={person.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={cn(
-                        "h-10 w-10 rounded-full font-black text-xs flex items-center justify-center shrink-0 shadow-2xs",
-                        person.avatarBg
-                      )}
-                    >
-                      {person.initials}
+                return (
+                  <div
+                    key={person.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={cn(
+                          "h-10 w-10 rounded-full font-black text-xs flex items-center justify-center shrink-0 shadow-2xs transition-colors",
+                          person.avatarBg
+                        )}
+                      >
+                        {person.initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-foreground leading-tight truncate">
+                          {person.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-medium">
+                          {person.type === "owe" ? "You owe" : "Owes you"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-foreground leading-tight truncate">
-                        {person.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground font-medium">
-                        {person.type === "owe" ? "You owe" : "Owes you"}
-                      </p>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-sm sm:text-base font-black text-foreground">
+                        {formattedAmt}
+                      </span>
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          navigate(
+                            `/settlements/new?fromUserId=${person.fromUserId}&toUserId=${person.toUserId}&amountMinor=${person.amountMinor}&currency=${person.currency}`
+                          )
+                        }
+                        className="h-8 px-3.5 rounded-xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold text-xs shadow-2xs transition-transform active:scale-95"
+                      >
+                        Settle
+                      </Button>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-sm sm:text-base font-black text-foreground">
-                      {formattedAmt}
-                    </span>
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/settlements/new?toUserId=${person.id}&amountMinor=${person.amountMinor}`)
-                      }
-                      className="h-8 px-3.5 rounded-xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold text-xs shadow-2xs transition-transform active:scale-95"
-                    >
-                      Settle
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Real Zero Debt State */
+            <div className="py-8 text-center space-y-3">
+              <div className="h-12 w-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="h-6 w-6 stroke-[2.2]" />
+              </div>
+              <h3 className="font-bold text-base text-foreground">All tabs clear!</h3>
+              <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                You have no outstanding debts or pending settlements.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/settlements/new")}
+                className="mt-1 rounded-xl text-xs font-semibold"
+              >
+                Record manual settlement
+              </Button>
+            </div>
+          )}
 
           {/* Settle Up Bottom Helper Box */}
           <div className="p-4 rounded-2xl bg-muted/40 border border-border/50 flex items-center gap-3.5">
@@ -631,10 +850,10 @@ export function DashboardPage() {
             </div>
             <div>
               <p className="text-xs font-bold text-foreground leading-snug">
-                {settleList.length} people to settle with
+                {settleList.length} pending settlement{settleList.length === 1 ? "" : "s"}
               </p>
               <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                Settle up to keep your groups balanced.
+                Settle up to keep your group balances even.
               </p>
             </div>
           </div>

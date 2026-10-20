@@ -261,28 +261,27 @@ export function ReportsPage() {
         actions={
           <Button
             onClick={handleExportCSV}
-            variant="outline"
-            className="shadow-xs font-semibold gap-1.5"
             disabled={filteredExpenses.length === 0}
+            className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-4 w-4 stroke-[2.5]" />
             <span>Export CSV</span>
           </Button>
         }
       />
 
       {/* Control Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-card/60 p-4 rounded-xl border border-border/60">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-card p-3 sm:p-4 rounded-3xl border border-border/80 shadow-2xs">
         <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Calendar className="h-4 w-4 text-muted-foreground ml-1" />
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Period
           </span>
           <Select value={period} onValueChange={(val: any) => setPeriod(val)}>
-            <SelectTrigger className="w-44 h-9 text-xs bg-background">
+            <SelectTrigger className="w-44 h-10 rounded-2xl bg-muted/30 border-0 text-xs font-semibold">
               <SelectValue placeholder="Period" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl">
               <SelectItem value="this-month">This Month</SelectItem>
               <SelectItem value="last-month">Last Month</SelectItem>
               <SelectItem value="last-3-months">Last 3 Months</SelectItem>
@@ -292,7 +291,7 @@ export function ReportsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Currency
           </span>
           <div className="w-48">
@@ -306,71 +305,71 @@ export function ReportsPage() {
 
       {/* 4 Summary Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-border/60 shadow-xs">
-          <CardHeader className="p-5 pb-2 flex flex-row items-center justify-between space-y-0">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-3xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Total Spent
             </span>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-5 pt-0 space-y-1">
+            <TrendingUp className="h-4 w-4 text-primary" />
+          </div>
+          <div className="pt-2">
             <CurrencyDisplay
               amountMinor={summaryStats.totalMinor}
               currency={reportingCurrency}
               size="lg"
-              className="text-foreground font-bold"
+              className="text-foreground font-black text-2xl sm:text-3xl"
             />
-            <p className="text-xs text-muted-foreground">Your personal share</p>
-          </CardContent>
-        </Card>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Your personal share</p>
+          </div>
+        </div>
 
-        <Card className="border-border/60 shadow-xs">
-          <CardHeader className="p-5 pb-2 flex flex-row items-center justify-between space-y-0">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-3xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Average Per Expense
             </span>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-5 pt-0 space-y-1">
+            <Receipt className="h-4 w-4 text-primary" />
+          </div>
+          <div className="pt-2">
             <CurrencyDisplay
               amountMinor={summaryStats.avgMinor}
               currency={reportingCurrency}
               size="lg"
-              className="text-foreground font-bold"
+              className="text-foreground font-black text-2xl sm:text-3xl"
             />
-            <p className="text-xs text-muted-foreground">Mean transaction size</p>
-          </CardContent>
-        </Card>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Mean transaction size</p>
+          </div>
+        </div>
 
-        <Card className="border-border/60 shadow-xs">
-          <CardHeader className="p-5 pb-2 flex flex-row items-center justify-between space-y-0">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-3xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Top Category
             </span>
-            <Tag className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-5 pt-0 space-y-1">
-            <h3 className="text-xl font-bold text-foreground truncate">
+            <Tag className="h-4 w-4 text-primary" />
+          </div>
+          <div className="pt-2">
+            <h3 className="text-2xl sm:text-3xl font-black text-foreground truncate">
               {summaryStats.topCategory}
             </h3>
-            <p className="text-xs text-muted-foreground">Largest expenditure</p>
-          </CardContent>
-        </Card>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Largest expenditure</p>
+          </div>
+        </div>
 
-        <Card className="border-border/60 shadow-xs">
-          <CardHeader className="p-5 pb-2 flex flex-row items-center justify-between space-y-0">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-3xl border border-border/80 bg-card p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Total Expenses
             </span>
-            <Layers className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-5 pt-0 space-y-1">
-            <h3 className="text-2xl font-bold text-foreground">
+            <Layers className="h-4 w-4 text-primary" />
+          </div>
+          <div className="pt-2">
+            <h3 className="text-2xl sm:text-3xl font-black text-foreground">
               {summaryStats.expenseCount}
             </h3>
-            <p className="text-xs text-muted-foreground">Transactions in period</p>
-          </CardContent>
-        </Card>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Transactions in period</p>
+          </div>
+        </div>
       </div>
 
       {/* Main Charts */}

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightLeft,
   Plus,
-  Filter,
   Calendar,
   Users,
   Search,
@@ -97,40 +96,40 @@ export function SettlementsPage() {
   }, [settlements, dateFilter, search, userMap]);
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 sm:space-y-8 pb-16 animate-in fade-in-50 duration-300">
       <PageHeader
-        title="Settlements"
-        description="History of debt repayments and payments made between members."
+        title="Activity & Settlements"
+        description="History of debt repayments, direct transfers, and settlements across all ledgers."
         actions={
           <Button
             onClick={() => navigate('/settlements/new')}
-            className="shadow-xs font-semibold gap-1.5"
+            className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 stroke-[2.5]" />
             <span>Record Settlement</span>
           </Button>
         }
       />
 
       {/* Filter Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 bg-card/60 p-4 rounded-xl border border-border/60">
+      <div className="flex flex-col sm:flex-row gap-3 bg-card p-3 sm:p-4 rounded-3xl border border-border/80 shadow-2xs">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by person name or note..."
-            className="pl-9 h-10 bg-background"
+            className="pl-10 h-11 rounded-2xl bg-muted/30 border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm font-medium"
           />
         </div>
 
         <div className="flex items-center gap-2.5">
           <Select value={selectedGroup} onValueChange={setSelectedGroup}>
-            <SelectTrigger className="w-44 h-10 bg-background text-xs">
+            <SelectTrigger className="w-44 h-11 rounded-2xl bg-muted/30 border-0 text-xs font-semibold">
               <Users className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
               <SelectValue placeholder="All Groups" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl">
               <SelectItem value="all">All Groups</SelectItem>
               {groups.map((g) => (
                 <SelectItem key={g.id} value={g.id}>
@@ -141,11 +140,11 @@ export function SettlementsPage() {
           </Select>
 
           <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-40 h-10 bg-background text-xs">
+            <SelectTrigger className="w-40 h-11 rounded-2xl bg-muted/30 border-0 text-xs font-semibold">
               <Calendar className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
               <SelectValue placeholder="All Time" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl">
               <SelectItem value="all">All Time</SelectItem>
               <SelectItem value="this-month">This Month</SelectItem>
               <SelectItem value="last-30-days">Last 30 Days</SelectItem>
@@ -157,8 +156,8 @@ export function SettlementsPage() {
       {/* Content */}
       {isLoading ? (
         <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-2xl" />
           ))}
         </div>
       ) : filteredSettlements.length === 0 ? (
@@ -167,18 +166,21 @@ export function SettlementsPage() {
           title="No settlements recorded"
           description="When someone repays a debt, record the transfer here to balance your group books."
           action={
-            <Button onClick={() => navigate('/settlements/new')} size="sm">
+            <Button
+              onClick={() => navigate('/settlements/new')}
+              className="rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold"
+            >
               <Plus className="h-4 w-4 mr-1.5" />
               Record First Settlement
             </Button>
           }
         />
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {filteredSettlements.map((s) => {
             const fromU = userMap.get(s.fromUserId);
             const toU = userMap.get(s.toUserId);
-            const groupName = s.groupId ? groupMap.get(s.groupId) : undefined;
+            const grpName = s.groupId ? groupMap.get(s.groupId) : undefined;
 
             return (
               <SettlementRow
@@ -186,7 +188,7 @@ export function SettlementsPage() {
                 settlement={s}
                 fromUser={fromU}
                 toUser={toU}
-                groupName={groupName}
+                groupName={grpName}
                 currentUserId={currentUserId}
               />
             );

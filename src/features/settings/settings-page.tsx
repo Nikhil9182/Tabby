@@ -160,73 +160,79 @@ export function SettingsPage() {
       />
 
       {/* 1. Profile Section */}
-      <Card className="border-border/60 shadow-xs">
-        <CardHeader className="p-5 pb-3">
-          <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-            <UserIcon className="h-4 w-4 text-primary" />
-            <span>Profile & Account</span>
-          </CardTitle>
-          <CardDescription>
+      <div className="rounded-3xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs space-y-5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <UserIcon className="h-5 w-5 text-[#0055FF]" />
+            <h2 className="text-xl font-black tracking-tight text-foreground">
+              Profile & Account
+            </h2>
+          </div>
+          <p className="text-xs text-muted-foreground font-medium">
             Your identity shown when splitting expenses and settlements.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-5 pt-2">
-          <form onSubmit={handleSaveProfile} className="space-y-4">
-            <div className="flex items-center gap-4 pb-2">
-              <Avatar size="lg" className="ring-2 ring-primary/20">
-                {displayPicture && <AvatarImage src={displayPicture} alt={displayName} />}
-                <AvatarFallback className="font-bold text-sm uppercase">
-                  {displayName.slice(0, 2)}
-                </AvatarFallback>
-              </Avatar>
+          </p>
+        </div>
 
-              <div className="min-w-0 space-y-0.5">
-                <p className="font-bold text-foreground truncate">{displayName}</p>
-                <p className="text-xs text-muted-foreground truncate">{displayEmail}</p>
-                <Badge variant="outline" className="text-[10px] font-mono capitalize">
-                  {isAuthenticated ? 'Connected to Google' : 'Local Workspace'}
-                </Badge>
-              </div>
+        <form onSubmit={handleSaveProfile} className="space-y-4">
+          <div className="flex items-center gap-4 pb-2">
+            <Avatar size="lg" className="border-2 border-background ring-2 ring-primary/20">
+              {displayPicture && <AvatarImage src={displayPicture} alt={displayName} />}
+              <AvatarFallback className="font-black text-sm uppercase bg-muted text-foreground">
+                {displayName.slice(0, 2)}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="min-w-0 space-y-0.5">
+              <p className="font-bold text-foreground truncate">{displayName}</p>
+              <p className="text-xs text-muted-foreground truncate font-medium">{displayEmail}</p>
+              <Badge variant="outline" className="text-[10px] font-bold capitalize">
+                {isAuthenticated ? 'Connected to Google' : 'Local Workspace'}
+              </Badge>
             </div>
+          </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Display Name
-              </label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your Name"
-                className="h-10 text-sm max-w-sm"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Display Name
+            </label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your Name"
+              className="h-11 rounded-2xl bg-muted/30 border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm font-medium max-w-sm"
+            />
+          </div>
 
-            {profileSaved && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Profile updated</span>
-              </p>
-            )}
+          {profileSaved && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Profile updated</span>
+            </p>
+          )}
 
-            <Button type="submit" size="sm" disabled={isUpdating}>
-              Save Profile
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          <Button
+            type="submit"
+            disabled={isUpdating}
+            className="h-10 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold"
+          >
+            Save Profile
+          </Button>
+        </form>
+      </div>
 
       {/* 2. Preferences (Currency & Theme) */}
-      <Card className="border-border/60 shadow-xs">
-        <CardHeader className="p-5 pb-3">
-          <CardTitle className="text-base sm:text-lg">Preferences</CardTitle>
-          <CardDescription>
+      <div className="rounded-3xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs space-y-5">
+        <div className="space-y-1">
+          <h2 className="text-xl font-black tracking-tight text-foreground">Preferences</h2>
+          <p className="text-xs text-muted-foreground font-medium">
             Default display units and interface color scheme.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-5 pt-2 space-y-5">
+          </p>
+        </div>
+
+        <div className="space-y-5">
           {/* Default Currency */}
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Primary Currency
             </label>
             <div className="max-w-sm">
@@ -239,7 +245,7 @@ export function SettingsPage() {
 
           {/* Theme Selector */}
           <div className="space-y-2 pt-2 border-t border-border/40">
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Interface Theme
             </label>
             <div className="grid grid-cols-3 gap-3 max-w-sm">
@@ -247,9 +253,9 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => setTheme('light')}
                 className={cn(
-                  'flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium gap-1.5 transition-all',
+                  'flex flex-col items-center justify-center p-3.5 rounded-2xl border text-xs font-bold gap-1.5 transition-all cursor-pointer',
                   theme === 'light'
-                    ? 'border-primary bg-primary/10 text-primary font-semibold ring-2 ring-primary/20'
+                    ? 'border-[#0055FF] bg-[#0055FF]/10 text-[#0055FF] ring-2 ring-[#0055FF]/20'
                     : 'border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40'
                 )}
               >
@@ -261,9 +267,9 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => setTheme('dark')}
                 className={cn(
-                  'flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium gap-1.5 transition-all',
+                  'flex flex-col items-center justify-center p-3.5 rounded-2xl border text-xs font-bold gap-1.5 transition-all cursor-pointer',
                   theme === 'dark'
-                    ? 'border-primary bg-primary/10 text-primary font-semibold ring-2 ring-primary/20'
+                    ? 'border-[#0055FF] bg-[#0055FF]/10 text-[#0055FF] ring-2 ring-[#0055FF]/20'
                     : 'border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40'
                 )}
               >
@@ -275,9 +281,9 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => setTheme('system')}
                 className={cn(
-                  'flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium gap-1.5 transition-all',
+                  'flex flex-col items-center justify-center p-3.5 rounded-2xl border text-xs font-bold gap-1.5 transition-all cursor-pointer',
                   theme === 'system'
-                    ? 'border-primary bg-primary/10 text-primary font-semibold ring-2 ring-primary/20'
+                    ? 'border-[#0055FF] bg-[#0055FF]/10 text-[#0055FF] ring-2 ring-[#0055FF]/20'
                     : 'border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40'
                 )}
               >
@@ -286,8 +292,8 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* 3. Google Account & Cloud Sync */}
       <Card className="border-border/60 shadow-xs">

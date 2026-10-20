@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
@@ -10,12 +10,12 @@ import {
   Laptop,
   CheckCircle2,
   RefreshCw,
-  CloudOff,
   LogOut,
   ExternalLink,
-  Menu,
-  X,
-  Plus,
+  Receipt,
+  ArrowRightLeft,
+  ArrowRight,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,10 +26,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useAuth } from "@/hooks/use-auth";
 import { useSync } from "@/hooks/use-sync";
 import { useTheme } from "@/hooks/use-theme";
-import { useCurrentUser } from "@/hooks/use-users";
+import { useCurrentUser, useUsers } from "@/hooks/use-users";
+import { useExpenses } from "@/hooks/use-expenses";
+import { useSettlements } from "@/hooks/use-settlements";
+import { useGroups } from "@/hooks/use-groups";
+import { formatMoney } from "@/domain/money/money";
+import { formatRelativeDate, formatDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -48,9 +58,9 @@ const NAV_ITEMS: NavItem[] = [
 export function TabbyLogo({ className }: { className?: string }) {
   return (
     <Link to="/dashboard" className={cn("flex items-center gap-2.5 group select-none", className)}>
-      <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-[#0055FF] flex items-center justify-center text-white relative shadow-xs group-hover:scale-105 transition-transform">
-        {/* Sleek vertical pill slit inside the blue circle */}
-        <div className="w-[3px] h-4 bg-background rounded-full" />
+      <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full overflow-hidden flex relative shadow-xs group-hover:scale-105 transition-transform shrink-0 border border-border/30">
+        <div className="w-1/2 h-full bg-[#0E0F12] dark:bg-white transition-colors duration-200" />
+        <div className="w-1/2 h-full bg-[#0055FF]" />
       </div>
       <span className="text-xl sm:text-2xl font-black tracking-tight text-foreground lowercase">
         tabby
@@ -64,28 +74,103 @@ export function Navbar() {
   const navigate = useNavigate();
   const { user: authUser, isAuthenticated, signOut } = useAuth();
   const { user: currentUser } = useCurrentUser();
-  const { isOnline, isSyncing, pendingCount, triggerSync } = useSync();
+  const { isOnline, isSyncing, pendingCount } = useSync();
   const { theme, setTheme } = useTheme();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { expenses } = useExpenses();
+  const { settlements } = useSettlements();
+  const { groups } = useGroups();
+  const { users } = useUsers();
+
+  const currentUserId = currentUser?.id || "current_user";
 
   // User initials
   const displayName = currentUser?.name || authUser?.name || "Alex Kumar";
-  const initials = displayName
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase() || "AK";
+  const initials =
+    displayName
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "AK";
+
+  // Build combined recent activity notifications
+  const notifications = useMemo(() => {
+    const list: Array<{
+      id: string;
+      type: "expense" | "settlement";
+      title: string;
+      subtitle: string;
+      amount: string;
+      timestamp: string;
+      timeLabel: string;
+      link: string;
+    }> = [];
+
+    // 1. Process active expenses
+    (expenses || [])
+      .filter((e) => !e.deletedAt)
+      .slice(0, 10)
+      .forEach((exp) => {
+        const grp = (groups || []).find((g) => g.id === exp.groupId);
+        const payer = (users || []).find((u) => u.id === exp.paidBy);
+        const isCurrentPayer = exp.paidBy === currentUserId;
+        const payerName = isCurrentPayer ? "You" : payer?.name || "A friend";
+        const targetDesc = grp ? `in ${grp.name}` : "as a direct split";
+
+        const dateStr = exp.createdAt || exp.expenseDate;
+        list.push({
+          id: `exp-${exp.id}`,
+          type: "expense",
+          title: exp.description,
+          subtitle: `${payerName} recorded ${targetDesc}`,
+          amount: formatMoney(exp.originalAmountMinor, exp.originalCurrency),
+          timestamp: dateStr,
+          timeLabel: formatRelativeDate(dateStr),
+          link: `/expenses/${exp.id}`,
+        });
+      });
+
+    // 2. Process active settlements
+    (settlements || [])
+      .filter((s) => !s.deletedAt)
+      .slice(0, 10)
+      .forEach((settle) => {
+        const fromUser = (users || []).find((u) => u.id === settle.fromUserId);
+        const toUser = (users || []).find((u) => u.id === settle.toUserId);
+        const fromName = settle.fromUserId === currentUserId ? "You" : fromUser?.name || "User";
+        const toName = settle.toUserId === currentUserId ? "you" : toUser?.name || "User";
+
+        const dateStr = settle.createdAt || settle.settlementDate;
+        list.push({
+          id: `set-${settle.id}`,
+          type: "settlement",
+          title: "Payment settled",
+          subtitle: `${fromName} paid ${toName}`,
+          amount: formatMoney(settle.amountMinor, settle.currency),
+          timestamp: dateStr,
+          timeLabel: formatRelativeDate(dateStr),
+          link: `/settlements`,
+        });
+      });
+
+    // Sort newest first
+    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return list.slice(0, 8);
+  }, [expenses, settlements, groups, users, currentUserId]);
+
+  const hasNotifications = notifications.length > 0;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/90 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between gap-4">
-          {/* 1. Left: Logo */}
+          {/* 1. Left: Logo & Desktop Links */}
           <div className="flex items-center gap-8">
             <TabbyLogo />
 
-            {/* 2. Center Desktop Navigation Links */}
+            {/* Center Desktop Navigation Links */}
             <nav className="hidden md:flex items-center gap-7">
               {NAV_ITEMS.map((item) => {
                 const isActive =
@@ -110,54 +195,146 @@ export function Navbar() {
             </nav>
           </div>
 
-          {/* 3. Right Section: Sync Status + Notifications + Avatar */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            {/* Sync Status Badge */}
-            <button
-              onClick={() => triggerSync()}
-              disabled={isSyncing}
-              title="Click to trigger cloud synchronization"
-              className="hidden sm:inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full transition-all hover:bg-muted/70 cursor-pointer"
+          {/* 2. Right Section: Static Non-clickable Sync Badge + Notification Bell + User Profile */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Non-clickable Sync Status Pill (Display only - no glitching) */}
+            <div
+              className="hidden sm:inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full select-none bg-muted/30 border border-border/40"
+              title="Cloud synchronization status"
             >
               {!isOnline ? (
                 <>
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  <span className="text-amber-600 dark:text-amber-400">Offline</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Offline</span>
                 </>
               ) : isSyncing ? (
                 <>
-                  <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
-                  <span className="text-blue-600 dark:text-blue-400">Syncing...</span>
+                  <RefreshCw className="h-3 w-3 text-[#0055FF] animate-spin" />
+                  <span className="text-[#0055FF] font-medium">Syncing...</span>
                 </>
               ) : pendingCount > 0 ? (
                 <>
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  <span className="text-amber-600 dark:text-amber-400">
+                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">
                     {pendingCount} waiting to sync
                   </span>
                 </>
               ) : (
                 <>
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  <span className="text-muted-foreground">All changes synced</span>
+                  <span className="text-muted-foreground font-medium">All changes synced</span>
                 </>
               )}
-            </button>
-
-            {/* Notification Bell */}
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-full text-foreground/80 hover:text-foreground hover:bg-muted/80"
-                onClick={() => navigate("/settlements")}
-                title="Notifications & Activity"
-              >
-                <Bell className="h-4 w-4" />
-                {/* Red badge dot */}
-                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
-              </Button>
             </div>
+
+            {/* Notification Bell with Activity Dropdown Panel */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-full text-foreground/80 hover:text-foreground hover:bg-muted/80 relative"
+                  title="Activity and notifications"
+                  aria-label="View activity notifications"
+                >
+                  <Bell className="h-4 w-4" />
+                  {hasNotifications && (
+                    <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[#0055FF] ring-2 ring-background" />
+                  )}
+                </Button>
+              </PopoverTrigger>
+
+              <PopoverContent
+                align="end"
+                className="w-80 sm:w-96 p-0 rounded-3xl shadow-xl border border-border/80 bg-card overflow-hidden"
+              >
+                {/* Header */}
+                <div className="p-4 border-b border-border/60 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-black text-sm text-foreground">Activity & Notifications</h3>
+                    <p className="text-[11px] text-muted-foreground font-medium">
+                      Recent tabs, splits, and repayments
+                    </p>
+                  </div>
+                  {hasNotifications && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0055FF]/10 text-[#0055FF]">
+                      {notifications.length} recent
+                    </span>
+                  )}
+                </div>
+
+                {/* Notifications List */}
+                <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
+                  {hasNotifications ? (
+                    notifications.map((n) => {
+                      return (
+                        <div
+                          key={n.id}
+                          onClick={() => navigate(n.link)}
+                          className="p-3.5 hover:bg-muted/40 transition-colors cursor-pointer flex items-start gap-3 group"
+                        >
+                          <div
+                            className={cn(
+                              "h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 shadow-2xs",
+                              n.type === "expense"
+                                ? "bg-blue-100 text-[#0055FF] dark:bg-blue-950/60 dark:text-blue-300"
+                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            )}
+                          >
+                            {n.type === "expense" ? (
+                              <Receipt className="h-4 w-4" />
+                            ) : (
+                              <ArrowRightLeft className="h-4 w-4" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-xs font-bold text-foreground truncate group-hover:text-[#0055FF] transition-colors">
+                                {n.title}
+                              </p>
+                              <span className="text-xs font-black text-foreground shrink-0">
+                                {n.amount}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              {n.subtitle}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/80 flex items-center gap-1 pt-0.5">
+                              <Clock className="h-2.5 w-2.5" />
+                              <span>{n.timeLabel}</span>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-8 px-4 text-center space-y-2">
+                      <div className="h-10 w-10 rounded-2xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
+                        <CheckCircle2 className="h-5 w-5" />
+                      </div>
+                      <p className="text-xs font-bold text-foreground">All caught up!</p>
+                      <p className="text-[11px] text-muted-foreground max-w-[200px] mx-auto">
+                        New expenses and settlements in groups or direct splits will appear here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-2.5 bg-muted/30 border-t border-border/50 text-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigate("/settlements")}
+                    className="w-full text-xs font-bold text-[#0055FF] hover:text-[#0055FF] h-8 rounded-xl"
+                  >
+                    <span>View all activity</span>
+                    <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
 
             {/* User Profile Avatar with Dropdown */}
             <DropdownMenu>
@@ -242,70 +419,9 @@ export function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Mobile Hamburger Menu Toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-lg md:hidden text-foreground"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Toggle navigation menu"
-            >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </Button>
+            {/* Note: Mobile hamburger button removed per user request: bottom MobileNav already handles navigation without redundancy */}
           </div>
         </div>
-
-        {/* Mobile Dropdown Navigation Drawer */}
-        {mobileMenuOpen && (
-          <div className="md:hidden py-3 border-t border-border/60 animate-in slide-in-from-top-2 duration-200">
-            <div className="grid grid-cols-2 gap-2 pb-2">
-              {NAV_ITEMS.map((item) => {
-                const isActive =
-                  item.to === "/dashboard"
-                    ? location.pathname === "/dashboard" || location.pathname === "/"
-                    : location.pathname.startsWith(item.to);
-
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      "px-3 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center justify-between",
-                      isActive
-                        ? "bg-primary text-primary-foreground font-bold"
-                        : "text-foreground hover:bg-muted"
-                    )}
-                  >
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-
-            {/* Quick Actions in Mobile Drawer */}
-            <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
-              <Button
-                size="sm"
-                className="w-full bg-[#0055FF] text-white rounded-xl gap-1.5"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  navigate("/expenses/new");
-                }}
-              >
-                <Plus className="h-4 w-4" /> Add expense
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-xl shrink-0"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
     </header>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, CheckCircle2, Clock, Users, ArrowRightLeft } from 'lucide-react';
+import { ArrowRight, Users } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CurrencyDisplay } from '@/components/currency/currency-display';
@@ -50,55 +50,55 @@ export function SettlementRow({
         }
       }}
       className={cn(
-        'group flex items-center justify-between p-3.5 sm:p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/40 transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer shadow-xs',
+        'group flex items-center justify-between p-4 sm:p-5 rounded-3xl border border-border/80 bg-card hover:border-[#0055FF]/40 hover:shadow-xs transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
         className
       )}
     >
       <div className="flex items-center gap-3.5 min-w-0">
         {/* Avatars indicating direction */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <Avatar size="sm" className="ring-1 ring-border">
+          <Avatar size="sm" className="border-2 border-background">
             {fromUser?.picture && <AvatarImage src={fromUser.picture} alt={fromName} />}
-            <AvatarFallback className="text-[10px] font-semibold">
+            <AvatarFallback className="text-[10px] font-black uppercase bg-muted text-foreground">
               {fromName.slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
 
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
 
-          <Avatar size="sm" className="ring-1 ring-border">
+          <Avatar size="sm" className="border-2 border-background">
             {toUser?.picture && <AvatarImage src={toUser.picture} alt={toName} />}
-            <AvatarFallback className="text-[10px] font-semibold">
+            <AvatarFallback className="text-[10px] font-black uppercase bg-muted text-foreground">
               {toName.slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
         </div>
 
         {/* Narrative info */}
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 space-y-0.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm sm:text-base text-foreground tracking-tight">
+            <span className="font-bold text-sm sm:text-base text-foreground tracking-tight group-hover:text-[#0055FF] transition-colors">
               {isYouFrom ? 'You' : fromName} paid {isYouTo ? 'you' : toName}
             </span>
 
             {groupName && (
               <Badge
                 variant="outline"
-                className="text-[11px] h-5 px-1.5 py-0 font-normal gap-1 bg-muted/40 border-border/60 text-muted-foreground"
+                className="text-[10px] h-5 px-1.5 py-0 font-semibold gap-1 bg-muted/40 border-border/60 text-muted-foreground"
               >
                 <Users className="h-3 w-3" />
-                <span className="truncate max-w-[100px]">{groupName}</span>
+                <span className="truncate max-w-[120px]">{groupName}</span>
               </Badge>
             )}
           </div>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-            <span>{formattedDate}</span>
+            <span className="font-medium">{formattedDate}</span>
             {settlement.notes && (
               <>
                 <span>&bull;</span>
-                <span className="italic truncate max-w-[180px] sm:max-w-xs">
-                  &ldquo;{settlement.notes}&rdquo;
+                <span className="italic truncate max-w-[180px] sm:max-w-xs font-normal">
+                  "{settlement.notes}"
                 </span>
               </>
             )}
@@ -106,18 +106,14 @@ export function SettlementRow({
         </div>
       </div>
 
-      {/* Amount and check indicator */}
-      <div className="flex flex-col items-end gap-1 shrink-0 ml-3 text-right">
+      {/* Amount Display */}
+      <div className="shrink-0 pl-3 text-right">
         <CurrencyDisplay
           amountMinor={settlement.amountMinor}
           currency={settlement.currency}
           size="md"
-          className="text-foreground font-bold"
+          className="font-black text-foreground"
         />
-        <div className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-          <CheckCircle2 className="h-3 w-3" />
-          <span>Settled</span>
-        </div>
       </div>
     </div>
   );
