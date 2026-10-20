@@ -42,6 +42,9 @@ export function useCurrentUser(): UseCurrentUserResult {
   } = useQuery<User | null, Error>({
     queryKey: ['current-user', googleUser?.sub],
     queryFn: async () => {
+      // Clean up any legacy placeholder alias rows
+      await userRepository.cleanLegacyAliases();
+
       let existing = await userRepository.getCurrentUser();
 
       // If we have an authenticated Google user but no local record or googleSub mismatch,
@@ -60,8 +63,6 @@ export function useCurrentUser(): UseCurrentUserResult {
             updatedAt: now,
           };
           await userRepository.setCurrentUser(syncedUser);
-          await userRepository.upsertUser({ ...syncedUser, id: 'user_self' });
-          await userRepository.upsertUser({ ...syncedUser, id: 'current_user' });
           return syncedUser;
         }
       }
@@ -79,14 +80,8 @@ export function useCurrentUser(): UseCurrentUserResult {
           updatedAt: now,
         };
         await userRepository.setCurrentUser(initialUser);
-        await userRepository.upsertUser({ ...initialUser, id: 'user_self' });
-        await userRepository.upsertUser({ ...initialUser, id: 'current_user' });
         return initialUser;
       }
-
-      // Ensure alias 'user_self' and 'current_user' are kept in sync with the user's name
-      await userRepository.upsertUser({ ...existing, id: 'user_self' });
-      await userRepository.upsertUser({ ...existing, id: 'current_user' });
 
       return existing;
     },
@@ -120,25 +115,18 @@ export function useCurrentUser(): UseCurrentUserResult {
 
       await userRepository.setCurrentUser(current);
 
-      // Also ensure aliases 'user_self' and 'current_user' are stored with the exact same name
-      await userRepository.upsertUser({
-        ...current,
-        id: 'user_self',
-        isCurrentUser: true,
-      });
-      await userRepository.upsertUser({
-        ...current,
-        id: 'current_user',
-        isCurrentUser: true,
-      });
-
-      // Retroactively update any legacy records stored with 'user_self'
+      // Retroactively update any legacy records stored with 'user_self' or 'current_user'
       try {
-        const legacyExpenses = await db.expenses.where('paidBy').equals('user_self').toArray();
+        await userRepository.cleanLegacyAliases();
+        const legacyExpenses = await db.expenses
+          .filter((exp) => exp.paidBy === 'user_self' || exp.paidBy === 'current_user')
+          .toArray();
         for (const exp of legacyExpenses) {
           await db.expenses.update(exp.id, { paidBy: current.id });
         }
-        const legacySplits = await db.expenseSplits.where('userId').equals('user_self').toArray();
+        const legacySplits = await db.expenseSplits
+          .filter((s) => s.userId === 'user_self' || s.userId === 'current_user')
+          .toArray();
         for (const split of legacySplits) {
           await db.expenseSplits.update(split.id, { userId: current.id });
         }
@@ -179,15 +167,24 @@ export function useCurrentUser(): UseCurrentUserResult {
   };
 }
 
+export interface AddFriendInput {
+  email: string;
+  name?: string;
+}
+
 export interface UseUsersResult {
   users: User[];
   getUserById: (id: string) => User | undefined;
+  addFriend: (input: AddFriendInput) => Promise<User>;
+  removeFriend: (id: string) => Promise<void>;
+  isAddingFriend: boolean;
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<unknown>;
 }
 
 export function useUsers(): UseUsersResult {
+  const queryClient = useQueryClient();
   const queryKey = ['users'];
 
   const {
@@ -207,9 +204,57 @@ export function useUsers(): UseUsersResult {
     [users]
   );
 
+  const addFriendMutation = useMutation({
+    mutationFn: async (input: AddFriendInput): Promise<User> => {
+      const email = input.email.trim().toLowerCase();
+      if (!email || !email.includes('@')) {
+        throw new Error('Please enter a valid email address.');
+      }
+
+      const currentUser = await userRepository.getCurrentUser();
+      if (currentUser?.email && currentUser.email.trim().toLowerCase() === email) {
+        throw new Error('You cannot add your own email as a friend.');
+      }
+
+      const existing = await userRepository.getUserByEmail(email);
+      if (existing) {
+        throw new Error(`A contact with the email "${email}" already exists.`);
+      }
+
+      const displayName = input.name?.trim() || email.split('@')[0];
+      const now = new Date().toISOString();
+      const newFriend: User = {
+        id: generateId(),
+        name: displayName,
+        email,
+        isCurrentUser: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await userRepository.upsertUser(newFriend);
+      return newFriend;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const removeFriendMutation = useMutation({
+    mutationFn: async (friendId: string): Promise<void> => {
+      await userRepository.deleteUser(friendId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
   return {
     users,
     getUserById,
+    addFriend: (input: AddFriendInput) => addFriendMutation.mutateAsync(input),
+    removeFriend: (id: string) => removeFriendMutation.mutateAsync(id),
+    isAddingFriend: addFriendMutation.isPending,
     isLoading,
     error,
     refetch,

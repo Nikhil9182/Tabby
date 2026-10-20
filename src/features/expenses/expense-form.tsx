@@ -82,6 +82,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const routeParams = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const queryGroupId = searchParams.get('groupId');
+  const queryFriendId = searchParams.get('friendId');
   const expenseId = propExpenseId || routeParams.id;
   const isEditing = Boolean(expenseId);
 
@@ -148,7 +149,8 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       uid === currentUserId ||
       uid === 'user_self' ||
       uid === 'current_user' ||
-      uid === currentUser?.googleSub;
+      (currentUser?.id && uid === currentUser.id) ||
+      (currentUser?.googleSub && uid === currentUser.googleSub);
 
     const resolveMemberName = (uid: string, fallbackUser?: any) => {
       if (isCurrentEntity(uid)) {
@@ -157,20 +159,31 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       return fallbackUser?.name || fallbackUser?.email || uid;
     };
 
+    // 1. Current user is always added exactly ONCE
+    const selfLabel = currentUser?.name ? `${currentUser.name} (You)` : 'You';
+    list.push({
+      id: currentUserId,
+      name: selfLabel,
+    });
+
+    // 2. Add other participants
     if (watchedGroupId !== 'personal' && groupMemberships && groupMemberships.length > 0) {
       groupMemberships.forEach((gm) => {
+        if (isCurrentEntity(gm.userId)) return;
         const u = users.find((user) => user.id === gm.userId || user.googleSub === gm.userId);
-        list.push({
-          id: gm.userId,
-          name: resolveMemberName(gm.userId, u),
-        });
+        if (!list.some((m) => m.id === gm.userId)) {
+          list.push({
+            id: gm.userId,
+            name: resolveMemberName(gm.userId, u),
+          });
+        }
       });
     } else {
-      list.push({
-        id: currentUserId,
-        name: currentUser?.name ? `${currentUser.name} (You)` : 'You',
-      });
+      // Personal contacts / friends (excluding current user and any placeholder aliases)
       users.forEach((u) => {
+        if (isCurrentEntity(u.id) || (u.googleSub && isCurrentEntity(u.googleSub)) || u.isCurrentUser) {
+          return;
+        }
         if (!list.some((m) => m.id === u.id)) {
           list.push({
             id: u.id,
@@ -180,19 +193,23 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       });
     }
 
-    // Always ensure existing expense payer is included
-    if (existingExpense?.paidBy && !list.some((m) => m.id === existingExpense.paidBy)) {
-      const u = users.find((user) => user.id === existingExpense.paidBy || user.googleSub === existingExpense.paidBy);
-      list.push({
-        id: existingExpense.paidBy,
-        name: resolveMemberName(existingExpense.paidBy, u),
-      });
+    // Always ensure existing expense payer is included if editing
+    if (existingExpense?.paidBy && !isCurrentEntity(existingExpense.paidBy)) {
+      if (!list.some((m) => m.id === existingExpense.paidBy)) {
+        const u = users.find(
+          (user) => user.id === existingExpense.paidBy || user.googleSub === existingExpense.paidBy
+        );
+        list.push({
+          id: existingExpense.paidBy,
+          name: resolveMemberName(existingExpense.paidBy, u),
+        });
+      }
     }
 
-    // Ensure any participant from existing expense is included
+    // Ensure any participant from existing expense is included if editing
     if (existingExpense?.participants) {
       existingExpense.participants.forEach((pId) => {
-        if (!list.some((m) => m.id === pId)) {
+        if (!isCurrentEntity(pId) && !list.some((m) => m.id === pId)) {
           const u = users.find((user) => user.id === pId || user.googleSub === pId);
           list.push({
             id: pId,
@@ -202,12 +219,31 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       });
     }
 
-    return list;
+    // Strictly deduplicate by ID
+    const seen = new Set<string>();
+    const deduplicated: Array<{ id: string; name: string }> = [];
+    for (const item of list) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        deduplicated.push(item);
+      }
+    }
+
+    return deduplicated;
   }, [watchedGroupId, groupMemberships, users, currentUserId, currentUser, existingExpense]);
 
   // When group changes, update participants list if not editing
   useEffect(() => {
     if (!isEditing && availableMembers.length > 0) {
+      // If a specific friend was selected via query param, select user and that friend
+      if (queryFriendId && availableMembers.some((m) => m.id === queryFriendId)) {
+        const friendIds = [currentUserId, queryFriendId];
+        setSelectedParticipants(friendIds);
+        setPercentages({ [currentUserId]: 50, [queryFriendId]: 50 });
+        setShares({ [currentUserId]: 1, [queryFriendId]: 1 });
+        return;
+      }
+
       const allIds = availableMembers.map((m) => m.id);
       setSelectedParticipants((prev) => {
         if (prev.length === allIds.length && prev.every((id) => allIds.includes(id))) {
@@ -226,7 +262,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       setPercentages(newPct);
       setShares(newShares);
     }
-  }, [watchedGroupId, isEditing, availableMembers.length]);
+  }, [watchedGroupId, isEditing, availableMembers.length, queryFriendId, currentUserId]);
 
   // Prepopulate if editing (once when expense is loaded)
   const hasPopulatedRef = React.useRef(false);
