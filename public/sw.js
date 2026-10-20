@@ -9,21 +9,23 @@
  * - Clean old cache versions on activate.
  */
 
-const CACHE_VERSION = 'v1.0.0';
+const CACHE_VERSION = 'v1.0.1';
+const APP_BASE = new URL('./', self.location.href);
+const appUrl = (path) => new URL(path, APP_BASE).href;
 const STATIC_CACHE_NAME = `tabby-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `tabby-runtime-${CACHE_VERSION}`;
 
 // Pre-cached App Shell resources
 const PRECACHE_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/favicon.svg',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/icon-maskable-512.png',
-  '/apple-touch-icon.png',
-];
+  './',
+  'index.html',
+  'manifest.webmanifest',
+  'favicon.svg',
+  'icon-192.png',
+  'icon-512.png',
+  'icon-maskable-512.png',
+  'apple-touch-icon.png',
+].map(appUrl);
 
 // Domains and endpoints that MUST NEVER be cached
 function isForbiddenCache(request, url) {
@@ -62,7 +64,7 @@ function isStaticAsset(url) {
     return false;
   }
   return (
-    url.pathname.startsWith('/assets/') ||
+    url.pathname.startsWith(new URL('assets/', APP_BASE).pathname) ||
     /\.(?:js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|webp|ico)$/i.test(url.pathname)
   );
 }
@@ -137,18 +139,18 @@ self.addEventListener('fetch', (event) => {
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(STATIC_CACHE_NAME).then((cache) => {
-              cache.put('/index.html', clone);
+              cache.put(appUrl('index.html'), clone);
             });
           }
           return response;
         })
         .catch(async () => {
           // Offline fallback to app shell
-          const cached = await caches.match('/index.html');
+          const cached = await caches.match(appUrl('index.html'));
           if (cached) {
             return cached;
           }
-          const rootCached = await caches.match('/');
+          const rootCached = await caches.match(appUrl('./'));
           if (rootCached) {
             return rootCached;
           }

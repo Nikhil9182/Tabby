@@ -283,9 +283,10 @@ Because Tabby has **zero backend servers**, the compiled production bundle (`dis
 4. Configure your environment variables in Netlify site settings.
 
 ### Option 3: GitHub Pages
-1. In `vite.config.ts`, set `base: '/tabby/'` (matching your GitHub repository name).
-2. Set up GitHub Actions deployment using the standard `actions/deploy-pages` workflow on the `dist` directory.
-3. Add a copy of `dist/index.html` as `dist/404.html` so client-side routes resolve properly on reload.
+1. Open the repository's **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**. Publishing the source branch's root serves the uncompiled `index.html`, causing `/src/main.tsx` 404 errors and a blank page.
+2. Push to `main` or `master`, or run **Actions → Deploy to GitHub Pages → Run workflow**. The included `.github/workflows/deploy.yml` builds the app and publishes only `dist`.
+3. The build already uses the case-sensitive base `/Tabby/` and copies `dist/index.html` to `dist/404.html` for client-side route reloads.
+4. After deployment succeeds, open https://nikhil9182.github.io/Tabby/. Its HTML should reference `/Tabby/assets/*.js`, never `/src/main.tsx`. If an old page persists, unregister the site's service worker in browser developer tools and reload.
 
 ---
 

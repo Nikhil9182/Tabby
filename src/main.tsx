@@ -13,7 +13,7 @@ createRoot(document.getElementById("root")!).render(
 if ("serviceWorker" in navigator && (import.meta.env.PROD || import.meta.env.VITE_ENABLE_SW === "true")) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
-      .register("/sw.js")
+      .register(`${import.meta.env.BASE_URL}sw.js`)
       .then((registration) => {
         registration.addEventListener("updatefound", () => {
           const installingWorker = registration.installing;
