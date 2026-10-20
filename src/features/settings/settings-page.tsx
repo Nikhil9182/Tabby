@@ -15,6 +15,7 @@ import {
   Info,
   LogOut,
   LogIn,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +44,7 @@ import {
   useSettlements,
 } from '@/hooks';
 import { db } from '@/storage/local/database';
+import { seedDemoData } from '@/lib/seed-data';
 import { formatDate, formatRelativeDate } from '@/lib/date';
 import { toMajorUnits } from '@/domain/money/money';
 import { cn } from '@/lib/utils';
@@ -64,6 +66,19 @@ export function SettingsPage() {
   // Clear cache dialog
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
+
+  const handleSeedDemo = async () => {
+    setIsSeeding(true);
+    try {
+      await seedDemoData();
+      window.location.href = '/dashboard';
+    } catch (err) {
+      console.error('Failed to seed demo data:', err);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   React.useEffect(() => {
     if (user?.name) {
@@ -410,6 +425,17 @@ export function SettingsPage() {
             >
               <Download className="h-3.5 w-3.5" />
               <span>Full Data Backup (JSON)</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isSeeding}
+              onClick={handleSeedDemo}
+              className="gap-1.5 border-[#0055FF]/40 text-[#0055FF] hover:bg-[#0055FF]/10 font-bold"
+            >
+              <Sparkles className="h-3.5 w-3.5 fill-[#0055FF]/20" />
+              <span>{isSeeding ? 'Loading Demo Data...' : 'Load Sample Demo Data'}</span>
             </Button>
           </div>
 

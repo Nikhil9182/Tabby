@@ -15,6 +15,7 @@ import {
   Coffee,
   FolderPlus,
   Image as ImageIcon,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { useCurrentUser, useUsers } from "@/hooks/use-users";
 import { useCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/domain/money/money";
 import { calculateUserBalances, type PairwiseBalance } from "@/domain/balances/balance-engine";
+import { seedDemoData } from "@/lib/seed-data";
 import { cn } from "@/lib/utils";
 
 export function DashboardPage() {
@@ -37,6 +39,19 @@ export function DashboardPage() {
   const { settlements, isLoading: settlementsLoading } = useSettlements();
   const { users } = useUsers();
   const { defaultCurrency } = useCurrency();
+  const [isSeeding, setIsSeeding] = React.useState(false);
+
+  const handleSeedDemo = async () => {
+    setIsSeeding(true);
+    try {
+      await seedDemoData();
+      window.location.reload();
+    } catch (err) {
+      console.error("Failed to seed demo data:", err);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   const isCurrentUserEntity = (userId: string | undefined): boolean => {
     if (!userId) return false;
@@ -646,14 +661,26 @@ export function DashboardPage() {
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 Once you record personal or shared expenses, they will appear here with dynamic balances and settlement recommendations.
               </p>
-              <Button
-                size="sm"
-                onClick={() => navigate("/expenses/new")}
-                className="mt-2 bg-[#0055FF] hover:bg-[#0055FF]/90 text-white rounded-xl font-bold"
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Add your first expense
-              </Button>
+              <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => navigate("/expenses/new")}
+                  className="bg-[#0055FF] hover:bg-[#0055FF]/90 text-white rounded-xl font-bold h-9 px-4 shadow-xs"
+                >
+                  <Plus className="h-4 w-4 mr-1.5 stroke-[2.5]" />
+                  Add your first expense
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSeeding}
+                  onClick={handleSeedDemo}
+                  className="rounded-xl font-bold h-9 px-4 gap-1.5 border-border/80 hover:bg-muted/60"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" />
+                  <span>{isSeeding ? "Loading Demo..." : "Load Demo Data"}</span>
+                </Button>
+              </div>
             </div>
           )}
         </div>
