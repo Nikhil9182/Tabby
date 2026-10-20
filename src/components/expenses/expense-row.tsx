@@ -127,7 +127,7 @@ export function ExpenseRow({
         }
       }}
       className={cn(
-        'group flex items-center justify-between p-3.5 sm:p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/40 transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer shadow-xs',
+        'group flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/40 transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer shadow-xs',
         className
       )}
     >

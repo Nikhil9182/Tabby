@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useCollaboration } from '@/hooks/use-collaboration';
+import { useGroup } from '@/hooks/use-groups';
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeftRight, Check, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
@@ -18,13 +20,19 @@ export function SettlementNewPage() {
   const { user: currentUser } = useCurrentUser();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  const groupId = searchParams.get('groupId') || undefined;
+  const { members } = useGroup(groupId || '');
+  const { friends } = useCollaboration();
+  const eligibleUsers = groupId
+    ? users.filter(u => members.some(m => m.userId === u.id && (!m.status || m.status === 'active')))
+    : users.filter(u => u.isCurrentUser || friends.some(f => f.person.id === u.id));
 
   const currentId = currentUser?.id || user?.sub || "user_self";
   const paramToUser = searchParams.get("toUserId");
   const paramAmountMinor = searchParams.get("amountMinor");
   const initialAmount = paramAmountMinor ? (parseInt(paramAmountMinor, 10) / 100).toFixed(2) : "";
 
-  const [fromUser, setFromUser] = useState(currentId);
+  const [fromUser, setFromUser] = useState(searchParams.get('fromUserId') || '');
   const [toUser, setToUser] = useState(paramToUser || "");
   const [amountStr, setAmountStr] = useState(initialAmount || "");
   const [currency, setCurrency] = useState("USD");
@@ -37,11 +45,12 @@ export function SettlementNewPage() {
     setFormError(null);
 
     const amountFloat = parseFloat(amountStr);
+    const payerId = fromUser || currentId;
     if (!toUser.trim()) {
       setFormError("Recipient user is required");
       return;
     }
-    if (fromUser === toUser) {
+    if (payerId === toUser) {
       setFormError("Payer and recipient cannot be the same user");
       return;
     }
@@ -53,8 +62,12 @@ export function SettlementNewPage() {
     const amountMinor = Math.round(amountFloat * 100);
 
     try {
+      const otherId = payerId === currentId ? toUser : payerId;
+      const ledgerId = groupId || friends.find(f => f.person.id === otherId)?.invitation.sourceId;
+      if (!ledgerId) throw new Error('Select an accepted friend or an active group to settle up.');
       await recordSettlement({
-        fromUserId: fromUser,
+        groupId: ledgerId,
+        fromUserId: payerId,
         toUserId: toUser.trim(),
         amountMinor,
         currency: currency.toUpperCase(),
@@ -101,26 +114,24 @@ export function SettlementNewPage() {
                 <Label htmlFor="fromUser" className="text-xs font-semibold">
                   Paid By (Sender)
                 </Label>
-                <Input
+                <select className="w-full rounded-xl border bg-background p-2"
                   id="fromUser"
-                  value={fromUser}
+                  value={fromUser || currentId}
                   onChange={(e) => setFromUser(e.target.value)}
-                  placeholder="Sender ID or Name"
                   required
-                />
+                ><option value="">Choose payer</option>{eligibleUsers.map(u => <option key={u.id} value={u.id}>{u.id === currentId ? 'You' : u.name || u.email}</option>)}</select>
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="toUser" className="text-xs font-semibold">
                   Paid To (Recipient)
                 </Label>
-                <Input
+                <select className="w-full rounded-xl border bg-background p-2"
                   id="toUser"
                   value={toUser}
                   onChange={(e) => setToUser(e.target.value)}
-                  placeholder="Recipient ID or Name"
                   required
-                />
+                ><option value="">Choose recipient</option>{eligibleUsers.map(u => <option key={u.id} value={u.id}>{u.id === currentId ? 'You' : u.name || u.email}</option>)}</select>
               </div>
             </div>
 

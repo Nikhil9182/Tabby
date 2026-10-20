@@ -185,9 +185,9 @@ export function ExpensesPage() {
               <Link
                 key={expense.id}
                 to={`/expenses/${expense.id}`}
-                className="flex items-center justify-between p-4 sm:p-5 rounded-3xl border border-border/80 bg-card hover:border-[#0055FF]/40 hover:shadow-xs transition-all group"
+                className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 rounded-3xl border border-border/80 bg-card hover:border-[#0055FF]/40 hover:shadow-xs transition-all group"
               >
-                <div className="flex items-center gap-3.5 min-w-0">
+                <div className="flex flex-1 items-center gap-3.5 min-w-0">
                   <div
                     className={cn(
                       "h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-2xs",
@@ -220,7 +220,7 @@ export function ExpensesPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 pl-3">
+                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 sm:pl-3 border-t sm:border-0 pt-3 sm:pt-0">
                   <div className="flex flex-col items-end">
                     <span className="text-base font-black text-foreground">
                       {amountFormatted}

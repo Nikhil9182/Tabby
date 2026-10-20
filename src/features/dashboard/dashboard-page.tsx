@@ -302,7 +302,7 @@ export function DashboardPage() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           {/* Main Net Amount */}
           <div className="flex items-center gap-4 sm:gap-6 flex-wrap sm:flex-nowrap">
-            <span className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-black select-none">
+            <span className="min-w-0 max-w-full break-all text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-black select-none">
               {hasExpenses ? `${netSign}${formattedNet}` : formatMoney(0, curr)}
             </span>
 

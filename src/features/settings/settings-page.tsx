@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DeleteAccountCard } from './delete-account-card';
 import {
   User as UserIcon,
   Moon,
@@ -72,7 +73,7 @@ export function SettingsPage() {
     setIsSeeding(true);
     try {
       await seedDemoData();
-      window.location.href = '/dashboard';
+      window.location.href = `${import.meta.env.BASE_URL}dashboard`;
     } catch (err) {
       console.error('Failed to seed demo data:', err);
     } finally {
@@ -95,10 +96,11 @@ export function SettingsPage() {
   };
 
   // Export JSON
-  const handleExportJSON = () => {
+  const handleExportJSON = async () => {
     const data = {
       version: '0.1.0',
-      schemaVersion: 1,
+      schemaVersion: db.verno,
+      tables: Object.fromEntries(await Promise.all(db.tables.map(async table => [table.name, await table.toArray()]))),
       exportedAt: new Date().toISOString(),
       user,
       groups,
@@ -116,6 +118,7 @@ export function SettingsPage() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Export CSV
@@ -147,6 +150,7 @@ export function SettingsPage() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Clear Local Database Cache
@@ -324,7 +328,7 @@ export function SettingsPage() {
         <CardContent className="p-5 pt-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 rounded-xl border border-border/40 bg-muted/20 gap-3">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-sm">Google Drive Connection</span>
                 <Badge
                   variant={isAuthenticated ? 'default' : 'outline'}
@@ -333,7 +337,7 @@ export function SettingsPage() {
                   {isAuthenticated ? 'Connected' : 'Disconnected'}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground break-words">
                 {isAuthenticated
                   ? `Authenticated as ${googleUser?.email}`
                   : 'Connect your Google account to sync spreadsheets across devices.'}
@@ -454,11 +458,12 @@ export function SettingsPage() {
       </Card>
 
       {/* 5. App Info & Privacy */}
+      <DeleteAccountCard />
       <div className="space-y-3 pt-2 text-xs text-muted-foreground">
         <div className="flex items-center justify-between p-4 rounded-xl border border-border/40 bg-muted/10">
           <div>
             <p className="font-semibold text-foreground">Tabby Expense Splitting</p>
-            <p>Version 0.1.0 &bull; Database Schema v1</p>
+            <p>Version 0.1.0 &bull; Database Schema v{db.verno}</p>
           </div>
           <Badge variant="outline" className="font-mono text-[10px]">
             Dexie IndexedDB

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useCollaboration } from '@/hooks/use-collaboration';
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
@@ -51,8 +52,8 @@ export interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Overview", to: "/dashboard" },
   { label: "Expenses", to: "/expenses" },
+  { label: "Friends", to: "/friends" },
   { label: "Groups", to: "/groups" },
-  { label: "Activity", to: "/settlements" },
   { label: "Reports", to: "/reports" },
 ];
 
@@ -79,6 +80,7 @@ export function Navbar() {
   const { settlements } = useSettlements();
   const { groups } = useGroups();
   const { users } = useUsers();
+  const { pendingIncoming } = useCollaboration();
 
   const currentUserId = currentUser?.id || "current_user";
 
@@ -158,10 +160,10 @@ export function Navbar() {
     return list.slice(0, 8);
   }, [expenses, settlements, groups, users, currentUserId]);
 
-  const hasNotifications = notifications.length > 0;
+  const hasNotifications = notifications.length > 0 || pendingIncoming.length > 0;
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/90 backdrop-blur-md">
+    <header className="sticky top-0 z-40 w-full pt-[env(safe-area-inset-top)] border-b border-border/80 bg-background/90 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between gap-4">
           {/* 1. Left: Logo & Desktop Links */}
@@ -200,7 +202,9 @@ export function Navbar() {
               className="hidden sm:inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full select-none bg-muted/30 border border-border/40"
               title="Cloud synchronization status"
             >
-              {!isOnline ? (
+              {!isAuthenticated ? (
+                <span className="text-muted-foreground">Stored on this device</span>
+              ) : !isOnline ? (
                 <>
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
                   <span className="text-amber-600 dark:text-amber-400 font-medium">Offline</span>
@@ -244,7 +248,7 @@ export function Navbar() {
 
               <PopoverContent
                 align="end"
-                className="w-80 sm:w-96 p-0 rounded-3xl shadow-xl border border-border/80 bg-card overflow-hidden"
+                className="w-[min(24rem,calc(100vw-2rem))] max-h-[calc(100dvh-6rem)] overflow-y-auto p-0 rounded-3xl shadow-xl border border-border/80 bg-card"
               >
                 {/* Header */}
                 <div className="p-4 border-b border-border/60 flex items-center justify-between">
@@ -263,6 +267,10 @@ export function Navbar() {
 
                 {/* Notifications List */}
                 <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
+                  {pendingIncoming.map(invite => <button key={invite.id} className="block w-full p-4 text-left hover:bg-muted/40" onClick={() => navigate('/friends')}>
+                    <span className="block text-sm font-bold">{invite.sender.name || invite.sender.email} sent a {invite.kind === 'friend' ? 'friend request' : 'group invitation'}</span>
+                    <span className="text-xs text-muted-foreground">Review and accept or decline in Friends</span>
+                  </button>)}
                   {hasNotifications ? (
                     notifications.map((n) => {
                       return (
@@ -378,6 +386,10 @@ export function Navbar() {
                 <DropdownMenuSeparator />
 
                 {/* Theme Toggle in Menu */}
+                <DropdownMenuItem onClick={() => navigate('/settlements')} className="rounded-lg cursor-pointer gap-2">
+                  <Clock className="h-4 w-4" />
+                  <span>All Activity</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                   className="rounded-lg cursor-pointer gap-2"

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { isDeletingAccount } from '@/services/account/deletion-state';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { User, SyncOperation } from '@/domain/models/types';
 import { db } from '@/storage/local/database';
@@ -26,14 +27,7 @@ export function useCurrentUser(): UseCurrentUserResult {
   const queryClient = useQueryClient();
   const queryKey = ['current-user'];
 
-  let googleUser: any = null;
-  try {
-    const auth = useAuth();
-    googleUser = auth.user;
-  } catch {
-    // Graceful fallback if invoked outside AuthProvider
-    googleUser = null;
-  }
+  const { user: googleUser } = useAuth();
 
   const {
     data: localUser,
@@ -42,6 +36,7 @@ export function useCurrentUser(): UseCurrentUserResult {
   } = useQuery<User | null, Error>({
     queryKey: ['current-user', googleUser?.sub],
     queryFn: async () => {
+      if (isDeletingAccount()) return null;
       // Clean up any legacy placeholder alias rows
       await userRepository.cleanLegacyAliases();
 
@@ -50,10 +45,10 @@ export function useCurrentUser(): UseCurrentUserResult {
       // If we have an authenticated Google user but no local record or googleSub mismatch,
       // create or sync the local current user record
       if (googleUser) {
-        if (!existing || existing.googleSub !== googleUser.sub) {
+        if (!existing || existing.googleSub !== googleUser.sub || existing.id !== `google_${googleUser.sub}`) {
           const now = new Date().toISOString();
           const syncedUser: User = {
-            id: existing?.id || generateId(),
+            id: `google_${googleUser.sub}`,
             name: googleUser.name || 'Anonymous User',
             email: googleUser.email,
             googleSub: googleUser.sub,
@@ -62,7 +57,10 @@ export function useCurrentUser(): UseCurrentUserResult {
             createdAt: existing?.createdAt || now,
             updatedAt: now,
           };
-          await userRepository.setCurrentUser(syncedUser);
+          const sameAccount = !existing?.googleSub || existing.googleSub === googleUser.sub;
+          await userRepository.adoptGoogleIdentity(syncedUser, sameAccount ? existing?.id : undefined);
+          void queryClient.invalidateQueries({ queryKey: ['users'] });
+          void queryClient.invalidateQueries({ queryKey: ['groups'] });
           return syncedUser;
         }
       }
@@ -80,6 +78,7 @@ export function useCurrentUser(): UseCurrentUserResult {
           updatedAt: now,
         };
         await userRepository.setCurrentUser(initialUser);
+        void queryClient.invalidateQueries({ queryKey: ['users'] });
         return initialUser;
       }
 

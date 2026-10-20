@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   Receipt,
   Users,
-  ArrowLeftRight,
   BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,8 +16,8 @@ interface MobileTabItem {
 const mainTabs: MobileTabItem[] = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/expenses", label: "Expenses", icon: Receipt },
+  { to: "/friends", label: "Friends", icon: Users },
   { to: "/groups", label: "Groups", icon: Users },
-  { to: "/settlements", label: "Activity", icon: ArrowLeftRight },
   { to: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
@@ -28,7 +27,7 @@ export function MobileNav({ className }: { className?: string }) {
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border px-2 py-1.5 flex items-center justify-around select-none shadow-lg",
+        "fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] flex items-center justify-around select-none shadow-lg",
         className
       )}
       aria-label="Mobile Navigation"
@@ -45,7 +44,7 @@ export function MobileNav({ className }: { className?: string }) {
             key={tab.to}
             to={tab.to}
             className={cn(
-              "flex flex-col items-center justify-center flex-1 py-1.5 px-1 min-w-[56px] min-h-[48px] rounded-xl text-[11px] font-semibold transition-all",
+              "flex flex-col items-center justify-center flex-1 py-1.5 px-1 min-w-0 min-h-[48px] rounded-xl text-[11px] font-semibold transition-all",
               isActive
                 ? "text-[#0055FF] dark:text-[#3B82F6]"
                 : "text-muted-foreground hover:text-foreground"

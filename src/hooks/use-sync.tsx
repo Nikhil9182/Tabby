@@ -4,11 +4,14 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import type { SyncOperation, AuthState } from '@/domain/models/types';
 import { syncRepository } from '@/storage/repositories/sync-repository';
 import { useAuth } from './use-auth';
+import { useQueryClient } from '@tanstack/react-query';
+import { syncEngine } from '@/services/sync/sync-engine';
 
 export interface SyncStatus {
   isOnline: boolean;
@@ -49,15 +52,10 @@ export interface SyncProviderProps {
 }
 
 export function SyncProvider({ children }: SyncProviderProps) {
+  const queryClient = useQueryClient();
   // Use auth context for current auth state; fallback safely if used outside
-  let currentAuthState: AuthState = 'disconnected';
-  try {
-    const auth = useAuth();
-    currentAuthState = auth.authState;
-  } catch {
-    // If rendered without AuthProvider higher up, gracefully fallback
-    currentAuthState = 'disconnected';
-  }
+  const { authState: currentAuthState } = useAuth();
+  const syncInFlight = useRef(false);
 
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -133,23 +131,18 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
   // Trigger manual or automatic sync
   const triggerSync = useCallback(async (): Promise<void> => {
-    if (isSyncing) return;
+    if (syncInFlight.current) return;
     if (!isOnline) {
       console.warn('Cannot sync while offline');
       return;
     }
 
+    syncInFlight.current = true;
     setIsSyncing(true);
     try {
-      // Refresh pending items
-      const pendingOps = await syncRepository.getPendingOperations();
-      
-      // TODO: When Google Drive / Sheets sync engine is initialized,
-      // dispatch pending operations to the remote sync coordinator.
-      // For now, if operations exist, we track their execution or simulated sync.
-      if (pendingOps.length > 0) {
-        // Placeholder execution: real remote sync service will process queue
-      }
+      if (currentAuthState !== 'connected') return;
+      await syncEngine.startSync();
+      await queryClient.invalidateQueries();
 
       const now = new Date().toISOString();
       setLastSyncedAt(now);
@@ -161,9 +154,19 @@ export function SyncProvider({ children }: SyncProviderProps) {
       console.error('Error during synchronization:', err);
       throw err;
     } finally {
+      syncInFlight.current = false;
       setIsSyncing(false);
     }
-  }, [isOnline, isSyncing, refreshSyncData]);
+  }, [isOnline, refreshSyncData, currentAuthState, queryClient]);
+
+  useEffect(() => {
+    if (!isOnline || currentAuthState !== 'connected') return;
+    const run = () => { void triggerSync().catch(console.error); };
+    const initial = setTimeout(run, 1000);
+    const interval = setInterval(run, 30000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+    // The engine serializes syncs; don't reset timers on every status transition.
+  }, [isOnline, currentAuthState, triggerSync]);
 
   const hasConflicts = conflicts.length > 0;
 

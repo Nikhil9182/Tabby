@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { requireActiveParticipants } from '@/services/collaboration/access';
 import { z } from 'zod';
 import type { Settlement, SyncOperation } from '@/domain/models/types';
 import { settlementRepository } from '@/storage/repositories/settlement-repository';
@@ -69,7 +70,8 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
     mutationFn: async (input: RecordSettlementInput): Promise<Settlement> => {
       const normalizedCurrency = (input.currency || 'USD').trim().toUpperCase();
       const normalizedDate = input.settlementDate || new Date().toISOString();
-      const sourceId = input.sourceId || input.groupId || input.fromUserId;
+      const sourceId = input.groupId || input.sourceId || input.fromUserId;
+      await requireActiveParticipants(input.groupId, [input.fromUserId, input.toUserId]);
 
       recordSettlementSchema.parse({
         groupId: input.groupId,

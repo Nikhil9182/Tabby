@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useCollaboration } from '@/hooks/use-collaboration';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -93,7 +94,8 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const { createExpense, updateExpense, isCreating, isUpdating } = useExpenses();
   const { expense: existingExpense, splits: existingSplits, isLoading: isLoadingExisting } =
     useExpense(expenseId || '');
-  const { groups } = useGroups();
+  const { allGroups: groups } = useGroups();
+  const { friends } = useCollaboration();
   const { categories } = useCategories();
   const { users } = useUsers();
 
@@ -167,8 +169,9 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     });
 
     // 2. Add other participants
-    if (watchedGroupId !== 'personal' && groupMemberships && groupMemberships.length > 0) {
+    if (watchedGroupId !== 'personal') {
       groupMemberships.forEach((gm) => {
+        if (gm.status && gm.status !== 'active') return;
         if (isCurrentEntity(gm.userId)) return;
         const u = users.find((user) => user.id === gm.userId || user.googleSub === gm.userId);
         if (!list.some((m) => m.id === gm.userId)) {
@@ -180,8 +183,8 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       });
     } else {
       // Personal contacts / friends (excluding current user and any placeholder aliases)
-      users.forEach((u) => {
-        if (isCurrentEntity(u.id) || (u.googleSub && isCurrentEntity(u.googleSub)) || u.isCurrentUser) {
+      friends.map(f => f.person).forEach((u) => {
+        if (isCurrentEntity(u.id) || (u.googleSub && isCurrentEntity(u.googleSub))) {
           return;
         }
         if (!list.some((m) => m.id === u.id)) {
@@ -230,7 +233,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     }
 
     return deduplicated;
-  }, [watchedGroupId, groupMemberships, users, currentUserId, currentUser, existingExpense]);
+  }, [watchedGroupId, groupMemberships, users, friends, currentUserId, currentUser, existingExpense]);
 
   // When group changes, update participants list if not editing
   useEffect(() => {
@@ -244,7 +247,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         return;
       }
 
-      const allIds = availableMembers.map((m) => m.id);
+      const allIds = watchedGroupId === 'personal' ? [currentUserId] : availableMembers.map((m) => m.id);
       setSelectedParticipants((prev) => {
         if (prev.length === allIds.length && prev.every((id) => allIds.includes(id))) {
           return prev;
@@ -462,6 +465,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   // Form submission
   const onSubmit = async (data: ExpenseFormData) => {
     setSubmitError(null);
+    if (data.paidBy === 'current_user' || data.paidBy === 'user_self') data.paidBy = currentUserId;
 
     if (totalAmountMinor <= 0) {
       setSubmitError('Please enter a valid expense amount.');
@@ -486,7 +490,15 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     }));
 
     try {
-      const isGroup = data.groupId !== 'personal';
+      let targetId = data.groupId;
+      if (targetId === 'personal' && selectedParticipants.some(id => id !== currentUserId)) {
+        const others = selectedParticipants.filter(id => id !== currentUserId);
+        if (others.length !== 1) throw new Error('Choose a group for expenses shared with more than one friend.');
+        const friendship = friends.find(f => f.person.id === others[0]);
+        if (!friendship) throw new Error('Accept a friend request before sharing an expense.');
+        targetId = friendship.invitation.sourceId;
+      }
+      const isGroup = targetId !== 'personal';
       const expenseDateISO = new Date(data.expenseDate).toISOString();
 
       if (isEditing && expenseId) {
@@ -496,9 +508,9 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           notes: data.notes,
           categoryId: data.categoryId,
           paidBy: data.paidBy,
-          groupId: isGroup ? data.groupId : undefined,
+          groupId: isGroup ? targetId : undefined,
           sourceType: isGroup ? 'group' : 'personal',
-          sourceId: isGroup ? data.groupId : currentUserId,
+          sourceId: isGroup ? targetId : currentUserId,
           originalAmountMinor: totalAmountMinor,
           originalCurrency: data.currency,
           splitType,
@@ -516,7 +528,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           originalCurrency: data.currency,
           paidBy: data.paidBy,
           sourceType: isGroup ? 'group' : 'personal',
-          groupId: isGroup ? data.groupId : undefined,
+          groupId: isGroup ? targetId : undefined,
           categoryId: data.categoryId,
           notes: data.notes,
           expenseDate: expenseDateISO,
@@ -680,19 +692,19 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Group / Context
+                  Share with
                 </label>
                 <Controller
                   control={control}
                   name="groupId"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={isEditing}>
                       <SelectTrigger className="h-10 bg-background">
-                        <SelectValue placeholder="Personal or group" />
+                        <SelectValue placeholder="Personal, friend, or group" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="personal">Personal Expense</SelectItem>
-                        {groups.map((g) => (
+                        {groups.filter(g => g.kind !== 'direct' || friends.some(f => f.invitation.sourceId === g.id)).map((g) => (
                           <SelectItem key={g.id} value={g.id}>
                             {g.name}
                           </SelectItem>
@@ -788,7 +800,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
               onValueChange={(val: any) => setSplitType(val)}
               className="w-full"
             >
-              <TabsList className="grid grid-cols-4 w-full h-10">
+              <TabsList className="grid grid-cols-2 min-[400px]:grid-cols-4 w-full h-auto gap-1 [&>button]:min-w-0 [&>button]:min-h-10 [&>button]:px-1">
                 <TabsTrigger value="equal" className="text-xs">
                   <Divide className="h-3.5 w-3.5 mr-1" />
                   Equal
@@ -844,7 +856,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                     <div
                       key={member.id}
                       className={cn(
-                        'flex items-center justify-between p-3 rounded-lg border transition-all text-sm',
+                        'flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-lg border transition-all text-sm',
                         isChecked
                           ? 'bg-card border-border/80'
                           : 'bg-muted/20 border-transparent opacity-60'
@@ -858,7 +870,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                         />
                         <label
                           htmlFor={`p-${member.id}`}
-                          className="font-medium cursor-pointer text-foreground"
+                          className="min-w-0 break-words font-medium cursor-pointer text-foreground"
                         >
                           {member.name}
                         </label>
@@ -866,7 +878,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
                       {/* Split inputs depending on method */}
                       {isChecked && (
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap justify-end items-center gap-3">
                           {splitType === 'equal' && (
                             <div className="text-right">
                               <span className="font-semibold">

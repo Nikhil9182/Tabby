@@ -1,4 +1,5 @@
 import { db } from '../../storage/local/database';
+import { isDeletingAccount } from '../account/deletion-state';
 import { syncRepository } from '../../storage/repositories/sync-repository';
 import { googleAuthService } from '../auth/google-auth-service';
 import { googleDriveService } from '../drive/google-drive-service';
@@ -33,6 +34,9 @@ import type {
 } from '../../domain/models/types';
 
 export class SyncEngine {
+  async waitUntilIdle(): Promise<void> {
+    while (this.isSyncing) await new Promise(resolve => setTimeout(resolve, 50));
+  }
   private isSyncing = false;
   private lastSyncedAt?: string;
   private listeners: Set<(status: SyncStatus) => void> = new Set();
@@ -122,6 +126,12 @@ export class SyncEngine {
    * Resolves or ensures a remote Google Spreadsheet for a given logical source.
    */
   async ensureSpreadsheetForSource(sourceId: string, isGroup: boolean = false): Promise<string> {
+    const group = isGroup ? await db.groups.get(sourceId) : undefined;
+    const currentUser = await db.users.filter(u => !!u.isCurrentUser).first();
+    if (group && group.createdBy !== currentUser?.id) {
+      const membership = currentUser ? await db.groupMemberships.get([sourceId, currentUser.id]) : undefined;
+      if (!membership || (membership.status && membership.status !== 'active')) throw new Error('Your membership is not active.');
+    }
     // 1. Check local file metadata
     const metadata = await db.fileMetadata.where('logicalId').equals(sourceId).first();
     if (metadata?.googleFileId) {
@@ -129,7 +139,10 @@ export class SyncEngine {
       if (hasAccess) {
         return metadata.googleFileId;
       }
+      if (group && group.createdBy !== currentUser?.id) throw new Error('Shared spreadsheet access is unavailable. Ask the owner to sync your accepted request.');
     }
+
+    if (group && group.createdBy !== currentUser?.id) throw new Error('Wait for the owner to activate your accepted request.');
 
     // 2. Search Drive for existing spreadsheet
     const folderId = await googleDriveService.ensureTabbyFolder();
@@ -187,6 +200,7 @@ export class SyncEngine {
   }
 
   async startSync(): Promise<SyncResult> {
+    if (isDeletingAccount()) return { synced: 0, failed: 0, conflicts: 0 };
     if (!onlineDetector.isOnline()) {
       return { synced: 0, failed: 0, conflicts: 0 };
     }
@@ -203,11 +217,14 @@ export class SyncEngine {
     await this.notifyStatusChange();
 
     try {
+      const { collaborationService } = await import('../collaboration/collaboration-service');
+      await collaborationService.refresh();
       // 1. Discover remote spreadsheets from Drive Tabby folder
       try {
         const driveFiles = await googleDriveService.listTabbyFiles();
         for (const file of driveFiles) {
           if (!file.id || !file.name) continue;
+          if (!file.name.startsWith('Tabby_Group_') && !file.name.startsWith('Tabby_Personal_')) continue;
           let fileType: 'group' | 'personal' = 'personal';
           let logicalId = file.id;
 
@@ -240,6 +257,8 @@ export class SyncEngine {
         console.warn('Error listing Tabby files from Google Drive:', driveErr);
       }
 
+      // Apply queued local writes before a remote pull can replace them.
+      const result = await this.processOutbox();
       // 2. Fetch remote changes for all known sources
       // Remote Drive data overrides local IndexedDB
       const allMetadata = await db.fileMetadata.toArray();
@@ -255,7 +274,6 @@ export class SyncEngine {
       await this.pushLocalDataToDrive();
 
       // 4. Process local pending outbox operations
-      const result = await this.processOutbox();
       this.lastSyncedAt = new Date().toISOString();
       return result;
     } finally {
@@ -294,10 +312,22 @@ export class SyncEngine {
   async syncEntity(operation: SyncOperation): Promise<void> {
     await syncRepository.updateOperationStatus(operation.id, 'syncing');
 
-    const isGroup = operation.entityType === 'group' || 
-                    operation.entityType === 'groupMembership' || 
-                    operation.entityType === 'settlement' ||
-                    Boolean(operation.payload?.groupId);
+    operation = { ...operation,
+      action: operation.action || operation.operationType,
+      payload: typeof operation.payload === 'string' ? JSON.parse(operation.payload) : operation.payload,
+    };
+    if (operation.entityType === 'user') {
+      // Shared identities live in Profiles, never in an expense row.
+      await syncRepository.markSynced(operation.id);
+      return;
+    }
+    if (operation.payload?.expense) operation.payload = { ...operation.payload.expense, splits: operation.payload.splits };
+    if (operation.action === 'delete') {
+      const record = operation.entityType === 'expense' ? await db.expenses.get(operation.entityId) : await db.settlements.get(operation.entityId);
+      operation.payload = { ...record, ...operation.payload };
+    }
+
+    const isGroup = !!(await db.groups.get(operation.sourceId));
 
     const spreadsheetId = await this.ensureSpreadsheetForSource(operation.sourceId, isGroup);
 
@@ -318,17 +348,20 @@ export class SyncEngine {
 
       // Special handling for group metadata
       if (operation.entityType === 'group') {
-        const groupObj = typeof operation.payload === 'string'
-          ? JSON.parse(operation.payload)
-          : (operation.payload || (await db.groups.get(operation.entityId)));
+        const groupObj = { ...(await db.groups.get(operation.entityId)), ...operation.payload };
         if (groupObj) {
           const serializedGroup = serializeGroupMetadata(groupObj);
           await googleSheetsService.updateRows(
             spreadsheetId,
             'Metadata',
-            'A2:B10',
+            'A2:B11',
             serializedGroup
           );
+          const localMembers = await db.groupMemberships.where('groupId').equals(groupObj.id).toArray();
+          const remoteMembers = await googleSheetsService.getSheetData(spreadsheetId, 'Members');
+          const count = Math.max(localMembers.length, remoteMembers.length - 1);
+          if (count > 0) await googleSheetsService.updateRows(spreadsheetId, 'Members', `A2:F${count + 1}`,
+            Array.from({ length: count }, (_, index) => localMembers[index] ? serializeMember(localMembers[index]) : ['', '', '', '', '', '']));
         }
         await syncRepository.markSynced(operation.id);
         return;
@@ -428,6 +461,16 @@ export class SyncEngine {
         }
       }
 
+      // Keep split rows in sync on updates and retries, including changed participants.
+      if (isGroup && operation.entityType === 'expense' && Array.isArray(operation.payload.splits)) {
+        const splitRows = await googleSheetsService.getSheetData(spreadsheetId, 'Splits');
+        const remote = splitRows.slice(1).map((row, index) => ({ row, index: index + 2 })).filter(r => String(r.row[1]) === operation.entityId);
+        const splits = operation.payload.splits;
+        for (let index = 0; index < remote.length; index++) {
+          await googleSheetsService.updateRows(spreadsheetId, 'Splits', `A${remote[index].index}:G${remote[index].index}`, [splits[index] ? serializeSplit(splits[index]) : ['', '', '', '', '', '', '']]);
+        }
+        if (splits.length > remote.length) await googleSheetsService.appendRows(spreadsheetId, 'Splits', splits.slice(remote.length).map(serializeSplit));
+      }
       // 3. Log completed operation to OperationLog
       const logRow = serializeOperationLog({
         operationId: operation.operationId,
@@ -453,10 +496,19 @@ export class SyncEngine {
 
     const spreadsheetId = metadata.googleFileId;
     const isGroup = metadata.fileType === 'group';
+    const pendingIds = new Set((await db.syncOperations.where('sourceId').equals(sourceId).toArray()).filter(op => op.status !== 'synced').map(op => op.entityId));
     let remoteRecordsFound = 0;
 
     // 1. If group spreadsheet: fetch group metadata and members
     if (isGroup) {
+      const profiles = await googleSheetsService.getSheetData(spreadsheetId, 'Profiles');
+      for (const row of profiles.slice(1)) {
+        if (!row[1]) continue;
+        const profile = JSON.parse(String(row[1]));
+        const existing = await db.users.get(String(row[0]));
+        if (existing?.isCurrentUser) continue;
+        await db.users.put({ ...profile, isCurrentUser: false, createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() });
+      }
       try {
         const metaRows = await googleSheetsService.getSheetData(spreadsheetId, 'Metadata');
         const remoteGroup = deserializeGroupMetadata(metaRows);
@@ -508,6 +560,7 @@ export class SyncEngine {
         for (const row of dataRows) {
           if (!row[0]) continue;
           const remoteExpense = deserializeExpense(row);
+          if (pendingIds.has(remoteExpense.id)) continue;
           // Drive spreadsheet data overrides local Dexie data
           await db.expenses.put(remoteExpense);
           remoteRecordsFound++;
@@ -524,11 +577,19 @@ export class SyncEngine {
         const splitRows = await googleSheetsService.getSheetData(spreadsheetId, 'Splits');
         if (splitRows.length > 1) {
           const dataRows = splitRows.slice(1);
+          const expenseIds = new Set(dataRows.filter(r => r[0]).map(r => String(r[1])));
+          for (const id of expenseIds) if (!pendingIds.has(id)) await db.expenseSplits.where('expenseId').equals(id).delete();
           for (const row of dataRows) {
             if (!row[0]) continue;
             const split = deserializeSplit(row);
+            if (pendingIds.has(split.expenseId)) continue;
             await db.expenseSplits.put(split);
             remoteRecordsFound++;
+          }
+          for (const id of expenseIds) {
+            if (pendingIds.has(id)) continue;
+            const splits = await db.expenseSplits.where('expenseId').equals(id).toArray();
+            await db.expenses.update(id, { participants: splits.map(s => s.userId) });
           }
         }
       } catch (err) {
@@ -543,6 +604,7 @@ export class SyncEngine {
           for (const row of dataRows) {
             if (!row[0]) continue;
             const settlement = deserializeSettlement(row);
+            if (pendingIds.has(settlement.id)) continue;
             await db.settlements.put(settlement);
             remoteRecordsFound++;
           }
@@ -592,7 +654,7 @@ export class SyncEngine {
           const metaRows = await googleSheetsService.getSheetData(spreadsheetId, 'Metadata');
           if (metaRows.length <= 1) {
             const groupRows = serializeGroupMetadata(group);
-            await googleSheetsService.updateRows(spreadsheetId, 'Metadata', 'A2:B10', groupRows);
+            await googleSheetsService.updateRows(spreadsheetId, 'Metadata', 'A2:B11', groupRows);
           }
 
           // Check Members
@@ -671,7 +733,7 @@ export class SyncEngine {
     const localCategories = await db.categories.toArray();
     if (localCategories.length > 0) {
       try {
-        const currentUser = await db.users.where('isCurrentUser').equals(1).first();
+        const currentUser = await db.users.filter(u => !!u.isCurrentUser).first();
         const personalSourceId = currentUser?.id || 'personal';
         const spreadsheetId = await this.ensureSpreadsheetForSource(personalSourceId, false);
         await this.queueSpreadsheetWrite(spreadsheetId, async () => {

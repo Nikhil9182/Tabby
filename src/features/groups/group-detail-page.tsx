@@ -1,3 +1,5 @@
+import { useCollaboration } from '@/hooks/use-collaboration';
+import { collaborationService } from '@/services/collaboration/collaboration-service';
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
@@ -49,9 +51,6 @@ import {
   useSettlements,
   useAuth,
 } from '@/hooks';
-import { groupRepository } from '@/storage/repositories/group-repository';
-import { userRepository } from '@/storage/repositories/user-repository';
-import { generateId } from '@/lib/id';
 import { formatDate } from '@/lib/date';
 import type { User, MemberRole, PairwiseBalance } from '@/domain/models/types';
 import { cn } from '@/lib/utils';
@@ -68,6 +67,7 @@ export function GroupDetailPage() {
   const { group, members, expenses, settlements, balances, isLoading, refetch } = useGroup(groupId);
   const { updateGroup, archiveGroup } = useGroups();
   const { users } = useUsers();
+  const { friends, invitations, sendRequest, isBusy } = useCollaboration();
   const { categories } = useCategories();
   const { splits } = useExpenses({ groupId });
 
@@ -76,7 +76,7 @@ export function GroupDetailPage() {
 
   // New member inputs
   const [newEmail, setNewEmail] = useState('');
-  const [newName, setNewName] = useState('');
+
   const [memberError, setMemberError] = useState<string | null>(null);
 
   // Edit settings form
@@ -134,7 +134,7 @@ export function GroupDetailPage() {
       }
       const u = userMap.get(id);
       if (u?.name && u.name !== 'user_self' && u.name !== 'current_user') return u.name;
-      return 'Unknown';
+      return u?.email || 'Member profile unavailable';
     },
     [currentUserId, currentUser, user, userMap]
   );
@@ -153,61 +153,25 @@ export function GroupDetailPage() {
     setMemberError(null);
 
     const email = newEmail.trim().toLowerCase();
-    const name = newName.trim() || email.split('@')[0];
-
-    if (!email) {
-      setMemberError('Enter an email address');
-      return;
+    try {
+      if (members.some(m => (!m.status || m.status === 'active') && userMap.get(m.userId)?.email.toLowerCase() === email)) throw new Error('This person is already a member.');
+      await sendRequest({ email, groupId });
+      setNewEmail('');
+      await refetch();
+    } catch (error) {
+      setMemberError(error instanceof Error ? error.message : 'Could not send invitation.');
     }
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(email)) {
-      setMemberError('Enter a valid email address');
-      return;
-    }
-
-    // Check if member already in group
-    const existingMember = members.some((m) => {
-      const u = userMap.get(m.userId);
-      return u?.email.toLowerCase() === email;
-    });
-
-    if (existingMember) {
-      setMemberError('Member already in group');
-      return;
-    }
-
-    let userToAdd = users.find((u) => u.email.toLowerCase() === email);
-    if (!userToAdd) {
-      const now = new Date().toISOString();
-      userToAdd = {
-        id: generateId(),
-        name,
-        email,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await userRepository.upsertUser(userToAdd);
-    }
-
-    await groupRepository.addMember({
-      groupId,
-      userId: userToAdd.id,
-      role: 'member',
-      status: 'active',
-      joinedAt: new Date().toISOString(),
-    });
-
-    setNewEmail('');
-    setNewName('');
-    void refetch();
   };
 
   // Remove Member
   const handleRemoveMember = async (userId: string) => {
     if (userId === group?.createdBy) return;
-    await groupRepository.removeMember(groupId, userId);
-    void refetch();
+    try {
+      await collaborationService.removeMember(groupId, userId);
+      await refetch();
+    } catch (error) {
+      setMemberError(error instanceof Error ? error.message : 'Could not remove collaborator.');
+    }
   };
 
   // Save Settings
@@ -261,19 +225,19 @@ export function GroupDetailPage() {
     <div className="space-y-6 sm:space-y-8 pb-16 animate-in fade-in-50 duration-300">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border/40">
-        <div className="flex items-start sm:items-center gap-3">
+        <div className="flex min-w-0 items-start sm:items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate('/groups')}
+            onClick={() => navigate(group.kind === 'direct' ? '/friends' : '/groups')}
             className="rounded-full -ml-2 text-muted-foreground hover:text-foreground shrink-0 h-10 w-10"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
 
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground">
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground break-words">
                 {group.name}
               </h1>
               <Badge variant="outline" className="font-mono text-xs uppercase font-bold">
@@ -292,7 +256,7 @@ export function GroupDetailPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto self-start sm:self-auto">
           <Button
             onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
             className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
@@ -330,7 +294,7 @@ export function GroupDetailPage() {
 
       {/* Group Navigation Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-12 bg-muted/60 p-1 rounded-2xl">
+        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-auto gap-1 bg-muted/60 p-1 rounded-2xl [&>button]:min-w-0 [&>button]:min-h-10 [&>button]:px-1">
           <TabsTrigger value="overview" className="text-xs sm:text-sm font-bold rounded-xl">
             Overview
           </TabsTrigger>
@@ -385,7 +349,7 @@ export function GroupDetailPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <Button
                   onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
                   className="rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold h-10 px-4"
@@ -579,7 +543,7 @@ export function GroupDetailPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border/40">
-                {members.map((member) => {
+                {members.filter(m => !m.status || m.status === 'active').map((member) => {
                   const u = userMap.get(member.userId);
                   const isYou = member.userId === currentUserId || member.userId === 'user_self' || member.userId === 'current_user';
                   const name = isYou ? 'You' : getUserName(member.userId);
@@ -703,29 +667,21 @@ export function GroupDetailPage() {
             </CardHeader>
             <CardContent className="p-5 pt-2 space-y-4">
               {/* Add member form */}
-              {isOwner && (
+              {isOwner && group.kind !== 'direct' && (
                 <form onSubmit={handleAddMember} className="flex flex-col sm:flex-row gap-2.5 pb-4 border-b border-border/40">
                   <div className="flex-1">
                     <Input
-                      type="email"
+                      type="email" list="accepted-friends"
                       placeholder="friend@example.com"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       className="h-9 text-sm"
                     />
                   </div>
-                  <div className="sm:w-36">
-                    <Input
-                      type="text"
-                      placeholder="Name (optional)"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  <Button type="submit" size="sm" className="h-9 gap-1.5 shrink-0">
+<datalist id="accepted-friends">{friends.map(f => <option key={f.person.id} value={f.person.email}>{f.person.name}</option>)}</datalist>
+                  <Button type="submit" size="sm" disabled={isBusy} className="h-9 gap-1.5 shrink-0">
                     <UserPlus className="h-4 w-4" />
-                    <span>Add Member</span>
+                    <span>{isBusy ? 'Sending…' : 'Send invitation'}</span>
                   </Button>
                 </form>
               )}
@@ -734,9 +690,11 @@ export function GroupDetailPage() {
                 <p className="text-xs text-rose-500 font-medium">{memberError}</p>
               )}
 
+              {invitations.filter(i => i.sourceId === groupId && ['pending', 'accepted'].includes(i.status)).map(i => <p key={i.id} className="text-sm text-muted-foreground break-all">{i.recipientEmail} · {i.status === 'accepted' ? 'Accepted, awaiting activation' : 'Invitation pending'}</p>)}
               {/* Members List */}
+              {members.filter(m => m.status === 'invited').map(m => <p key={m.userId} className="text-sm text-muted-foreground">{userMap.get(m.userId)?.email || 'Legacy contact'} · Requires a new invitation and acceptance</p>)}
               <div className="divide-y divide-border/40">
-                {members.map((member) => {
+                {members.filter(m => !m.status || m.status === 'active').map((member) => {
                   const u = userMap.get(member.userId);
                   const isYou = member.userId === currentUserId || member.userId === 'user_self' || member.userId === 'current_user';
                   const name = isYou ? (currentUser?.name || 'You') : getUserName(member.userId);

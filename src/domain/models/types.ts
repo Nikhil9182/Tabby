@@ -160,6 +160,7 @@ export const googleUserSchema: z.ZodType<GoogleUser> = z.object({
 // ==========================================
 
 export interface Group {
+  kind?: 'group' | 'direct';
   id: string;
   name: string;
   description?: string;
@@ -176,6 +177,7 @@ export interface Group {
 }
 
 export const groupSchema: z.ZodType<Group> = z.object({
+  kind: z.enum(['group', 'direct']).optional(),
   id: z.string().min(1, 'Group ID is required'),
   name: z.string().trim().min(1, 'Group name cannot be empty'),
   description: z.string().optional(),

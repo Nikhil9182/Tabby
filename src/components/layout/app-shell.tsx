@@ -18,7 +18,7 @@ export function AppShell({ children, className }: AppShellProps) {
       <Navbar />
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-24 md:pb-12">
+      <main className="flex-1 min-w-0 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-12">
         <ErrorBoundary>
           <Suspense fallback={<PageSkeleton />}>
             {children || <Outlet />}

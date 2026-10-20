@@ -292,6 +292,28 @@ Because Tabby has **zero backend servers**, the compiled production bundle (`dis
 
 ## ⚠️ Known Limitations & Google Sheets Considerations
 
+### Account deletion and phone layouts
+
+In **Settings → Delete Tabby account & erase data**, choose either device erasure or device plus owned Google Drive files. Review the exact file list, acknowledge any owned shared ledgers, and type `DELETE` before confirming. Cloud deletion permanently deletes the reviewed owned Tabby spreadsheets and invitation files. It does not delete a Google account, files owned by other people, or copies held by collaborators. Device-only erasure retains Drive files, which can return after reconnecting. The JSON backup includes every local table, including splits and memberships.
+
+Deletion pauses sync in open tabs before erasing records. A partial cloud failure retains local data and leaves sync paused across reloads so erased files are not recreated; reconnect if needed and retry deletion from Settings. After successful erasure, other open tabs return to onboarding. Starting again from onboarding explicitly re-enables local storage and sync.
+
+Phone layouts include bottom safe-area spacing, dialogs that scroll within the visible viewport, wrapping action controls and group tabs, stacked expense/settlement rows, and 16px form fields to prevent iOS focus zoom. The main screens are checked at 320, 375, and 430 pixel frame widths; browser scrollbars make the usable content width slightly smaller.
+
+### Friend requests and group invitations
+
+The **Friends** tab is the main entry point for direct expense sharing. Sending a request emails a Google Drive invitation to a separate `Tabby_Request_*` spreadsheet. It contains the invitation and acceptance response only. The personal expense spreadsheet is never shared. The recipient signs into Tabby with the invited Google email and accepts or declines under **Friends → Requests**.
+
+After acceptance, the sender must have Tabby open and connected to Google. The next sync grants access to the pair or group expense spreadsheet, publishes the accepted member's profile, and activates membership. Requests are polled every 30 seconds while the app is connected; **Refresh requests** also checks immediately. A browser-only GitHub Pages app cannot process acceptance while the sender is offline. Group invitations require separate acceptance even for existing friends.
+
+Each accepted friendship uses a dedicated shared ledger, represented internally as a group with `kind: direct` and excluded from the Groups list. Group ledgers remain separate. Pending, declined, and cancelled requests do not grant financial spreadsheet access or become selectable expense participants. Legacy local contacts require a new invitation; historical expenses are retained.
+
+**Google Cloud setup:** add `https://www.googleapis.com/auth/drive.metadata.readonly` to the OAuth consent configuration alongside the existing `drive.file`, `spreadsheets`, and profile scopes, then reconnect Google in Tabby. Metadata access is needed to discover invitation files shared by another user, which `drive.file` alone cannot reliably discover. This scope allows reading Drive file metadata; the app queries only `Tabby_Request_*` spreadsheets. Configure test users while the OAuth app is in Testing, and complete Google's required verification before wider distribution. Google Workspace sharing policies can prevent invitations to external accounts; failures appear in the request UI.
+
+Invitation identity and activation sheets are protected for the owner. Only the response sheet is editable by the invitee; the expense sheet is shared only after a valid acceptance for the addressed email. Editors cannot reshare through Drive. Existing offline copies cannot be recalled when access is revoked.
+
+Before a production rollout, verify with two Google test accounts: send a friend request, confirm that the expense sheet is inaccessible before acceptance, accept it, sync the owner, create an expense from each account, and confirm both balances. Repeat with a third account in a separate group; also check decline, cancellation, and owner removal. Automated tests mock Google APIs and cannot verify email delivery, OAuth configuration, or Workspace policy.
+
 While Google Sheets provides an extraordinary free, user-owned database, developers and users should keep the following operational characteristics in mind:
 
 1. **Google Sheets API Quotas**:

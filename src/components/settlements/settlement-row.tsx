@@ -64,7 +64,7 @@ export function SettlementRow({
         }
       }}
       className={cn(
-        'group flex items-center justify-between p-4 sm:p-5 rounded-3xl border border-border/80 bg-card hover:border-[#0055FF]/40 hover:shadow-xs transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
+        'group flex flex-col sm:flex-row items-stretch sm:items-center gap-3 justify-between p-4 sm:p-5 rounded-3xl border border-border/80 bg-card hover:border-[#0055FF]/40 hover:shadow-xs transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
         className
       )}
     >

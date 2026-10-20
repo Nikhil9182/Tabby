@@ -1,4 +1,5 @@
 import type { AuthState, GoogleUser } from '../../domain/models/types';
+import { resumeAfterErasure } from '../account/deletion-state';
 
 declare global {
   interface Window {
@@ -20,6 +21,8 @@ export class GoogleAuthService {
 
   private readonly scopes = [
     'https://www.googleapis.com/auth/drive.file',
+    // Discover invitation spreadsheets shared by other Tabby users.
+    'https://www.googleapis.com/auth/drive.metadata.readonly',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/userinfo.email',
@@ -50,6 +53,7 @@ export class GoogleAuthService {
   }
 
   async signIn(): Promise<GoogleUser> {
+    resumeAfterErasure();
     if (!this.clientId) {
       throw new Error('GoogleAuthService has not been initialized with a client ID.');
     }

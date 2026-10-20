@@ -97,6 +97,10 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Flex/grid children must be allowed to shrink on phone screens. */
+  #root { min-width: 0; }
+  input, select, textarea { min-width: 0; max-width: 100%; }
 }
 
 @theme inline {
@@ -132,4 +136,9 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 8px);
   --radius-2xl: calc(var(--radius) + 16px);
+}
+
+/* Avoid automatic page zoom when editing a field on iOS. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
 }

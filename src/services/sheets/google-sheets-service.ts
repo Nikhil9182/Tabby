@@ -77,7 +77,7 @@ export class GoogleSheetsService {
   async appendRows(spreadsheetId: string, sheetName: string, rows: any[][]): Promise<void> {
     if (rows.length === 0) return;
 
-    const url = `${SHEETS_API_BASE}/${spreadsheetId}/values/${encodeURIComponent(sheetName)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const url = `${SHEETS_API_BASE}/${spreadsheetId}/values/${encodeURIComponent(sheetName)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
     const response = await this.fetchWithAuth(url, {
       method: 'POST',
       headers: {
@@ -95,7 +95,7 @@ export class GoogleSheetsService {
 
   async updateRows(spreadsheetId: string, sheetName: string, range: string, values: any[][]): Promise<void> {
     const fullRange = `${sheetName}!${range}`;
-    const url = `${SHEETS_API_BASE}/${spreadsheetId}/values/${encodeURIComponent(fullRange)}?valueInputOption=USER_ENTERED`;
+    const url = `${SHEETS_API_BASE}/${spreadsheetId}/values/${encodeURIComponent(fullRange)}?valueInputOption=RAW`;
 
     const response = await this.fetchWithAuth(url, {
       method: 'PUT',

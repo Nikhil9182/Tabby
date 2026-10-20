@@ -111,7 +111,7 @@ export function useGroups() {
               groupId,
               userId: member.userId,
               role: member.role || 'member',
-              status: 'active',
+              status: 'invited',
               joinedAt: now,
               updatedAt: now,
             });
@@ -213,7 +213,8 @@ export function useGroups() {
   });
 
   return {
-    groups,
+    groups: groups.filter(g => g.kind !== 'direct'),
+    allGroups: groups,
     isLoading,
     isCreating: createGroupMutation.isPending,
     error,

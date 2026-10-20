@@ -35,7 +35,7 @@ export const GROUP_SHEETS = {
 
 export const HEADERS = {
   METADATA: ['Key', 'Value'],
-  MEMBERS: ['groupId', 'userId', 'role', 'joinedAt'],
+  MEMBERS: ['groupId', 'userId', 'role', 'joinedAt', 'status', 'updatedAt'],
   EXPENSES: [
     'id',
     'sourceType',
@@ -264,6 +264,8 @@ export function serializeMember(membership: GroupMembership): any[] {
     membership.userId,
     membership.role,
     membership.joinedAt,
+    membership.status || 'active',
+    membership.updatedAt || membership.joinedAt,
   ];
 }
 
@@ -273,6 +275,8 @@ export function deserializeMember(row: any[]): GroupMembership {
     userId: String(row[1] || ''),
     role: String(row[2] || 'member'),
     joinedAt: String(row[3] || new Date().toISOString()),
+    status: row[4] === 'invited' || row[4] === 'removed' ? row[4] : 'active',
+    updatedAt: String(row[5] || row[3] || ''),
   };
 }
 
@@ -336,6 +340,7 @@ export function serializeGroupMetadata(group: Group): any[][] {
     ['isArchived', String(Boolean(group.isArchived))],
     ['createdAt', group.createdAt || new Date().toISOString()],
     ['updatedAt', group.updatedAt || new Date().toISOString()],
+    ['kind', group.kind || 'group'],
   ];
 }
 
@@ -354,6 +359,7 @@ export function deserializeGroupMetadata(rows: any[][]): Group | null {
   return {
     id,
     name,
+    kind: map.get('kind') === 'direct' ? 'direct' : 'group',
     description: map.get('description') || undefined,
     currency: map.get('currency') || 'USD',
     imageUrl: map.get('imageUrl') || undefined,

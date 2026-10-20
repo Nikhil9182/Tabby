@@ -68,7 +68,7 @@ export function PageHeader({
       )}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {onBack && (
             <Button
               variant="ghost"
@@ -81,8 +81,8 @@ export function PageHeader({
             </Button>
           )}
 
-          <div className="space-y-1">
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground">
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground break-words">
               {title}
             </h1>
             {description && (
@@ -94,7 +94,7 @@ export function PageHeader({
         </div>
 
         {actionContent && (
-          <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
+          <div className="flex flex-wrap items-center gap-2.5 max-w-full self-start sm:self-center">
             {actionContent}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { requireActiveParticipants } from '@/services/collaboration/access';
 import { z } from 'zod';
 import type {
   Expense,
@@ -169,6 +170,7 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
           : Array.from(new Set(input.splits.map((s) => s.userId)));
 
       // Validate input schema
+      await requireActiveParticipants(input.groupId, [...participantIds, input.paidBy]);
       createExpenseInputSchema.parse({
         description: normalizedDescription,
         amountMinor: normalizedAmount,
@@ -335,6 +337,8 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         operationId,
         revision: (existing.revision || 1) + 1,
       };
+
+      await requireActiveParticipants(updatedExpense.groupId, [...(updatedExpense.participants || []), updatedExpense.paidBy]);
 
       let newSplits: ExpenseSplit[] | undefined;
       if (input.splits !== undefined) {

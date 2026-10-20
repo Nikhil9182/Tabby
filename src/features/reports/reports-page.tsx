@@ -278,7 +278,7 @@ export function ReportsPage() {
             Period
           </span>
           <Select value={period} onValueChange={(val: any) => setPeriod(val)}>
-            <SelectTrigger className="w-44 h-10 rounded-2xl bg-muted/30 border-0 text-xs font-semibold">
+            <SelectTrigger className="min-w-0 flex-1 sm:flex-none sm:w-44 h-10 rounded-2xl bg-muted/30 border-0 text-xs font-semibold">
               <SelectValue placeholder="Period" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl">
@@ -294,7 +294,7 @@ export function ReportsPage() {
           <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Currency
           </span>
-          <div className="w-48">
+          <div className="min-w-0 flex-1 sm:flex-none sm:w-48">
             <CurrencySelector
               value={reportingCurrency}
               onChange={setReportingCurrency}

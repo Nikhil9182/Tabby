@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { CollaborationInvitation } from '../../domain/models/collaboration';
 import type {
   User,
   Group,
@@ -15,6 +16,7 @@ import type {
 } from '../../domain/models/types';
 
 export class TabbyDatabase extends Dexie {
+  invitations!: Table<CollaborationInvitation, string>;
   users!: Table<User, string>;
   groups!: Table<Group, string>;
   groupMemberships!: Table<GroupMembership, [string, string]>;
@@ -43,6 +45,14 @@ export class TabbyDatabase extends Dexie {
       exchangeRateCache: '[baseCurrency+quoteCurrency+rateDate], baseCurrency, quoteCurrency',
       fileMetadata: 'id, fileType, logicalId, googleFileId',
       syncCheckpoints: '[sourceId+entityType], sourceId, entityType',
+    });
+    this.version(2).stores({ invitations: 'id, fileId, accountEmail, status, sourceId' }).upgrade(async transaction => {
+      // Old local contacts never went through acceptance or a Drive permission grant.
+      const groups = await transaction.table('groups').toArray();
+      const owners = new Map(groups.map(g => [g.id, g.createdBy]));
+      await transaction.table('groupMemberships').toCollection().modify(member => {
+        if (member.userId !== owners.get(member.groupId) && member.status !== 'removed') member.status = 'invited';
+      });
     });
   }
 }

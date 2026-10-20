@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { resumeAfterErasure } from '@/services/account/deletion-state';
 import {
   ArrowRight,
   ShieldCheck,
@@ -17,6 +18,7 @@ export function WelcomePage() {
   const { signIn, isAuthenticated, user } = useAuth();
 
   const handleStart = () => {
+    resumeAfterErasure();
     navigate("/dashboard");
   };
 
