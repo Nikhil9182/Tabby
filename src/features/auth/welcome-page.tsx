@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import {
-  PawPrint,
   ArrowRight,
   ShieldCheck,
   Zap,
@@ -8,6 +7,7 @@ import {
   Database,
   Calculator,
 } from "lucide-react";
+import { TabbyIcon } from "@/components/common/tabby-icon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -34,9 +34,7 @@ export function WelcomePage() {
       {/* Top Bar */}
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
-            <PawPrint className="h-5 w-5 fill-current" />
-          </div>
+          <TabbyIcon size={40} className="h-10 w-10 rounded-xl shadow-xs" />
           <span className="text-xl font-bold tracking-tight">Tabby</span>
         </div>
 

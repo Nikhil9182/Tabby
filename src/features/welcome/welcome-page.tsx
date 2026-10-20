@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  PawPrint,
   ShieldCheck,
   HardDrive,
   FileSpreadsheet,
@@ -10,6 +9,7 @@ import {
   Sparkles,
   Lock,
 } from 'lucide-react';
+import { TabbyIcon } from '@/components/common/tabby-icon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CurrencySelector } from '@/components/currency/currency-selector';
@@ -53,9 +53,7 @@ export function WelcomePage() {
       <div className="w-full max-w-xl space-y-8 text-center">
         {/* Branding */}
         <div className="space-y-3">
-          <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/25 ring-8 ring-primary/10">
-            <PawPrint className="h-8 w-8" />
-          </div>
+          <TabbyIcon size={64} className="h-16 w-16 rounded-2xl shadow-md ring-8 ring-primary/10 inline-block" />
           <div className="space-y-1">
             <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl text-foreground">
               Tabby

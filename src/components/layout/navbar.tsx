@@ -41,6 +41,7 @@ import { useGroups } from "@/hooks/use-groups";
 import { formatMoney } from "@/domain/money/money";
 import { formatRelativeDate, formatDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { TabbyIcon } from "@/components/common/tabby-icon";
 
 export interface NavItem {
   label: string;
@@ -58,10 +59,7 @@ const NAV_ITEMS: NavItem[] = [
 export function TabbyLogo({ className }: { className?: string }) {
   return (
     <Link to="/dashboard" className={cn("flex items-center gap-2.5 group select-none", className)}>
-      <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full overflow-hidden flex relative shadow-xs group-hover:scale-105 transition-transform shrink-0 border border-border/30">
-        <div className="w-1/2 h-full bg-[#0E0F12] dark:bg-white transition-colors duration-200" />
-        <div className="w-1/2 h-full bg-[#0055FF]" />
-      </div>
+      <TabbyIcon size={32} className="h-8 w-8 transition-transform duration-200 group-hover:scale-105 shadow-2xs" />
       <span className="text-xl sm:text-2xl font-black tracking-tight text-foreground lowercase">
         tabby
       </span>

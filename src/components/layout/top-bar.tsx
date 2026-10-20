@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, PawPrint } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { SyncIndicator } from "@/components/sync/sync-indicator";
 import { Button } from "@/components/ui/button";
+import { TabbyIcon } from "@/components/common/tabby-icon";
 import { cn } from "@/lib/utils";
 
 export interface TopBarProps {
@@ -70,9 +71,7 @@ export function TopBar({
             <ArrowLeft className="h-4 w-4" />
           </Button>
         ) : (
-          <div className="h-7 w-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-            <PawPrint className="h-4 w-4 fill-current" />
-          </div>
+          <TabbyIcon size={28} className="h-7 w-7 rounded-lg shadow-2xs shrink-0" />
         )}
 
         <h1 className="text-base font-semibold tracking-tight text-foreground truncate">

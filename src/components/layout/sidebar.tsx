@@ -1,6 +1,5 @@
 import { NavLink } from "react-router-dom";
 import {
-  PawPrint,
   LayoutDashboard,
   Receipt,
   Users,
@@ -10,6 +9,7 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
+import { TabbyIcon } from "@/components/common/tabby-icon";
 import { useAuth } from "@/hooks/use-auth";
 import { SyncIndicator } from "@/components/sync/sync-indicator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -59,9 +59,7 @@ export function Sidebar({ className }: { className?: string }) {
             to="/dashboard"
             className="flex items-center gap-2.5 group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring rounded-lg px-1 py-0.5"
           >
-            <div className="h-9 w-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs transition-transform duration-200 group-hover:scale-105">
-              <PawPrint className="h-5 w-5 fill-current" />
-            </div>
+            <TabbyIcon size={36} className="h-9 w-9 rounded-xl shadow-xs transition-transform duration-200 group-hover:scale-105" />
             <div className="flex flex-col">
               <span className="text-base font-bold tracking-tight text-foreground flex items-center gap-1.5 leading-none">
                 Tabby
