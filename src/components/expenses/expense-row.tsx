@@ -69,7 +69,12 @@ export function ExpenseRow({
 }: ExpenseRowProps) {
   const IconComponent = (categoryIcon && CATEGORY_ICON_MAP[categoryIcon]) || Receipt;
 
-  const isCurrentPayer = currentUserId && expense.paidBy === currentUserId;
+  const isCurrentPayer =
+    (currentUserId && expense.paidBy === currentUserId) ||
+    expense.paidBy === 'user_self' ||
+    expense.paidBy === 'current_user' ||
+    payerName === 'user_self' ||
+    payerName === 'You';
   const isDifferentCurrency =
     expense.originalCurrency &&
     defaultCurrency &&
@@ -178,7 +183,7 @@ export function ExpenseRow({
             <span>{formattedDate}</span>
             <span>&bull;</span>
             <span className="truncate">
-              {isCurrentPayer ? 'Paid by you' : `Paid by ${payerName || 'someone'}`}
+              {isCurrentPayer ? 'Paid by you' : `Paid by ${payerName && payerName !== 'user_self' ? payerName : 'someone'}`}
             </span>
 
             {/* Sync status indicator */}

@@ -27,6 +27,7 @@ export interface CreateGroupInput {
   description?: string;
   currency?: string;
   createdBy: string;
+  imageUrl?: string;
   members?: Array<{
     userId: string;
     role?: MemberRole;
@@ -38,6 +39,7 @@ export interface UpdateGroupInput {
   name?: string;
   description?: string;
   currency?: string;
+  imageUrl?: string;
 }
 
 export const createGroupInputSchema = z.object({
@@ -45,6 +47,7 @@ export const createGroupInputSchema = z.object({
   description: z.string().max(500).optional(),
   currency: z.string().trim().length(3).toUpperCase().default('USD'),
   createdBy: z.string().min(1, 'Creator user ID is required'),
+  imageUrl: z.string().optional(),
   members: z
     .array(
       z.object({
@@ -84,6 +87,7 @@ export function useGroups() {
         description: input.description,
         currency,
         createdBy: input.createdBy,
+        imageUrl: input.imageUrl,
         isArchived: false,
         createdAt: now,
         updatedAt: now,
@@ -152,6 +156,7 @@ export function useGroups() {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.currency !== undefined ? { currency: input.currency.toUpperCase() } : {}),
+        ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
         updatedAt: now,
       };
 

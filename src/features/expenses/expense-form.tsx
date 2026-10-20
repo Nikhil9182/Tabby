@@ -144,24 +144,37 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const availableMembers = useMemo(() => {
     const list: Array<{ id: string; name: string }> = [];
 
+    const isCurrentEntity = (uid: string) =>
+      uid === currentUserId ||
+      uid === 'user_self' ||
+      uid === 'current_user' ||
+      uid === currentUser?.googleSub;
+
+    const resolveMemberName = (uid: string, fallbackUser?: any) => {
+      if (isCurrentEntity(uid)) {
+        return currentUser?.name ? `${currentUser.name} (You)` : 'You';
+      }
+      return fallbackUser?.name || fallbackUser?.email || uid;
+    };
+
     if (watchedGroupId !== 'personal' && groupMemberships && groupMemberships.length > 0) {
       groupMemberships.forEach((gm) => {
-        const u = users.find((user) => user.id === gm.userId);
+        const u = users.find((user) => user.id === gm.userId || user.googleSub === gm.userId);
         list.push({
           id: gm.userId,
-          name: gm.userId === currentUserId ? 'You' : u?.name || u?.email || gm.userId,
+          name: resolveMemberName(gm.userId, u),
         });
       });
     } else {
       list.push({
         id: currentUserId,
-        name: currentUser?.name || currentUser?.email || 'You',
+        name: currentUser?.name ? `${currentUser.name} (You)` : 'You',
       });
       users.forEach((u) => {
         if (!list.some((m) => m.id === u.id)) {
           list.push({
             id: u.id,
-            name: u.id === currentUserId ? 'You' : u.name || u.email || u.id,
+            name: resolveMemberName(u.id, u),
           });
         }
       });
@@ -169,10 +182,10 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
     // Always ensure existing expense payer is included
     if (existingExpense?.paidBy && !list.some((m) => m.id === existingExpense.paidBy)) {
-      const u = users.find((user) => user.id === existingExpense.paidBy);
+      const u = users.find((user) => user.id === existingExpense.paidBy || user.googleSub === existingExpense.paidBy);
       list.push({
         id: existingExpense.paidBy,
-        name: existingExpense.paidBy === currentUserId ? 'You' : u?.name || u?.email || existingExpense.paidBy,
+        name: resolveMemberName(existingExpense.paidBy, u),
       });
     }
 
@@ -180,10 +193,10 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     if (existingExpense?.participants) {
       existingExpense.participants.forEach((pId) => {
         if (!list.some((m) => m.id === pId)) {
-          const u = users.find((user) => user.id === pId);
+          const u = users.find((user) => user.id === pId || user.googleSub === pId);
           list.push({
             id: pId,
-            name: pId === currentUserId ? 'You' : u?.name || u?.email || pId,
+            name: resolveMemberName(pId, u),
           });
         }
       });

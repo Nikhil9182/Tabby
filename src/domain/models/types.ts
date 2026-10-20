@@ -167,6 +167,7 @@ export interface Group {
   currency?: Currency;
   defaultCurrency?: Currency;
   memberIds?: string[];
+  imageUrl?: string;
   isArchived?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -182,6 +183,7 @@ export const groupSchema: z.ZodType<Group> = z.object({
   currency: currencySchema.optional(),
   defaultCurrency: currencySchema.optional(),
   memberIds: z.array(z.string().min(1)).optional(),
+  imageUrl: z.string().optional(),
   isArchived: z.boolean().optional(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,

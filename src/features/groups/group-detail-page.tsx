@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Users,
@@ -38,6 +38,7 @@ import { CurrencyDisplay } from '@/components/currency/currency-display';
 import { CurrencySelector } from '@/components/currency/currency-selector';
 import { ExpenseRow } from '@/components/expenses/expense-row';
 import { SettlementRow } from '@/components/settlements/settlement-row';
+import { TripImagePicker } from '@/components/groups/trip-image-picker';
 import {
   useGroup,
   useGroups,
@@ -46,6 +47,7 @@ import {
   useCategories,
   useExpenses,
   useSettlements,
+  useAuth,
 } from '@/hooks';
 import { groupRepository } from '@/storage/repositories/group-repository';
 import { userRepository } from '@/storage/repositories/user-repository';
@@ -59,6 +61,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const groupId = paramGroupId || id || '';
 
+  const { user } = useAuth();
   const { user: currentUser } = useCurrentUser();
   const currentUserId = currentUser?.id || 'current_user';
 
@@ -80,6 +83,7 @@ export function GroupDetailPage() {
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editCurrency, setEditCurrency] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
   const [settingsSaved, setSettingsSaved] = useState(false);
 
   React.useEffect(() => {
@@ -87,6 +91,7 @@ export function GroupDetailPage() {
       setEditName(group.name);
       setEditDesc(group.description || '');
       setEditCurrency(group.currency || 'USD');
+      setEditImageUrl(group.imageUrl || '');
     }
   }, [group]);
 
@@ -99,12 +104,40 @@ export function GroupDetailPage() {
     return map;
   }, [categories]);
 
-  // User Map
+  // User Map with alias resolution
   const userMap = useMemo(() => {
     const map = new Map<string, User>();
     users.forEach((u) => map.set(u.id, u));
+    if (currentUser) {
+      map.set(currentUser.id, currentUser);
+      map.set('user_self', currentUser);
+      map.set('current_user', currentUser);
+      if (currentUser.googleSub) map.set(currentUser.googleSub, currentUser);
+    }
+    if (user?.sub && currentUser) {
+      map.set(user.sub, currentUser);
+    }
     return map;
-  }, [users]);
+  }, [users, currentUser, user]);
+
+  const getUserName = useCallback(
+    (id?: string): string => {
+      if (!id) return 'Unknown';
+      if (
+        id === currentUserId ||
+        id === 'user_self' ||
+        id === 'current_user' ||
+        id === currentUser?.googleSub ||
+        id === user?.sub
+      ) {
+        return currentUser?.name || 'You';
+      }
+      const u = userMap.get(id);
+      if (u?.name && u.name !== 'user_self' && u.name !== 'current_user') return u.name;
+      return 'Unknown';
+    },
+    [currentUserId, currentUser, user, userMap]
+  );
 
   // Current user net balance in this group
   const myBalance = balances?.balances?.get(currentUserId);
@@ -187,6 +220,7 @@ export function GroupDetailPage() {
       name: editName.trim(),
       description: editDesc.trim(),
       currency: editCurrency,
+      imageUrl: editImageUrl || undefined,
     });
 
     setSettingsSaved(true);
@@ -277,6 +311,22 @@ export function GroupDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Trip Cover Banner if present */}
+      {group.imageUrl && (
+        <div className="relative h-44 sm:h-56 w-full rounded-3xl overflow-hidden shadow-xs border border-border/80">
+          <img
+            src={group.imageUrl}
+            alt={group.name}
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex items-end p-6">
+            <span className="text-white font-black text-2xl sm:text-3xl tracking-tight drop-shadow-sm">
+              {group.name}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Group Navigation Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -369,10 +419,8 @@ export function GroupDetailPage() {
               </CardHeader>
               <CardContent className="p-5 pt-0 space-y-2.5">
                 {balances.simplifiedDebts.map((debt, idx) => {
-                  const fromU = userMap.get(debt.fromUserId);
-                  const toU = userMap.get(debt.toUserId);
-                  const fromName = debt.fromUserId === currentUserId ? 'You' : fromU?.name || debt.fromUserId;
-                  const toName = debt.toUserId === currentUserId ? 'you' : toU?.name || debt.toUserId;
+                  const fromName = debt.fromUserId === currentUserId ? 'You' : getUserName(debt.fromUserId);
+                  const toName = debt.toUserId === currentUserId ? 'you' : getUserName(debt.toUserId);
 
                   return (
                     <div
@@ -445,7 +493,6 @@ export function GroupDetailPage() {
                   const cat = exp.categoryId ? categoryMap.get(exp.categoryId) : undefined;
                   const expSplits = splits[exp.id] || [];
                   const userSplit = expSplits.find((s) => s.userId === currentUserId);
-                  const payerUser = userMap.get(exp.paidBy);
 
                   return (
                     <ExpenseRow
@@ -454,7 +501,7 @@ export function GroupDetailPage() {
                       categoryName={cat?.name}
                       categoryIcon={cat?.icon}
                       categoryColor={cat?.color}
-                      payerName={payerUser?.name}
+                      payerName={getUserName(exp.paidBy)}
                       currentUserId={currentUserId}
                       userShareMinor={userSplit?.shareMinor}
                       defaultCurrency={groupCurrency}
@@ -500,7 +547,6 @@ export function GroupDetailPage() {
                 const cat = exp.categoryId ? categoryMap.get(exp.categoryId) : undefined;
                 const expSplits = splits[exp.id] || [];
                 const userSplit = expSplits.find((s) => s.userId === currentUserId);
-                const payerUser = userMap.get(exp.paidBy);
 
                 return (
                   <ExpenseRow
@@ -509,7 +555,7 @@ export function GroupDetailPage() {
                     categoryName={cat?.name}
                     categoryIcon={cat?.icon}
                     categoryColor={cat?.color}
-                    payerName={payerUser?.name}
+                    payerName={getUserName(exp.paidBy)}
                     currentUserId={currentUserId}
                     userShareMinor={userSplit?.shareMinor}
                     defaultCurrency={groupCurrency}
@@ -535,8 +581,8 @@ export function GroupDetailPage() {
               <div className="divide-y divide-border/40">
                 {members.map((member) => {
                   const u = userMap.get(member.userId);
-                  const isYou = member.userId === currentUserId;
-                  const name = isYou ? 'You' : u?.name || u?.email || member.userId;
+                  const isYou = member.userId === currentUserId || member.userId === 'user_self' || member.userId === 'current_user';
+                  const name = isYou ? 'You' : getUserName(member.userId);
                   const userBal = balances?.balances?.get(member.userId);
                   const net = userBal?.netBalance ?? 0;
 
@@ -594,10 +640,8 @@ export function GroupDetailPage() {
                 </p>
               ) : (
                 balances.simplifiedDebts.map((debt, idx) => {
-                  const fromU = userMap.get(debt.fromUserId);
-                  const toU = userMap.get(debt.toUserId);
-                  const fromName = debt.fromUserId === currentUserId ? 'You' : fromU?.name || debt.fromUserId;
-                  const toName = debt.toUserId === currentUserId ? 'you' : toU?.name || debt.toUserId;
+                  const fromName = debt.fromUserId === currentUserId ? 'You' : getUserName(debt.fromUserId);
+                  const toName = debt.toUserId === currentUserId ? 'you' : getUserName(debt.toUserId);
 
                   return (
                     <div
@@ -694,8 +738,8 @@ export function GroupDetailPage() {
               <div className="divide-y divide-border/40">
                 {members.map((member) => {
                   const u = userMap.get(member.userId);
-                  const isYou = member.userId === currentUserId;
-                  const name = isYou ? 'You' : u?.name || u?.email || member.userId;
+                  const isYou = member.userId === currentUserId || member.userId === 'user_self' || member.userId === 'current_user';
+                  const name = isYou ? (currentUser?.name || 'You') : getUserName(member.userId);
                   const isGroupCreator = member.userId === group.createdBy;
 
                   return (
@@ -835,6 +879,14 @@ export function GroupDetailPage() {
                   <CurrencySelector
                     value={editCurrency}
                     onChange={setEditCurrency}
+                  />
+                </div>
+
+                {/* Trip Cover Image Picker */}
+                <div className="pt-2 border-t border-border/40">
+                  <TripImagePicker
+                    value={editImageUrl}
+                    onChange={setEditImageUrl}
                   />
                 </div>
 

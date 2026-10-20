@@ -7,15 +7,14 @@ import {
   ShoppingCart,
   Car,
   Home,
-  Sparkles,
   Users,
   Receipt,
   CheckCircle2,
   Calendar,
   Plane,
   Coffee,
-  Heart,
   FolderPlus,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,119 +27,6 @@ import { formatMoney } from "@/domain/money/money";
 import { calculateUserBalances, type PairwiseBalance } from "@/domain/balances/balance-engine";
 import { cn } from "@/lib/utils";
 
-// --- Vector Graphic Illustrations for Group Cards (Theme-reactive) ---
-
-function PalmTreesIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 120 100"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={cn("pointer-events-none select-none transition-colors", className)}
-    >
-      <circle cx="88" cy="28" r="14" strokeWidth="2.2" strokeDasharray="3 3" />
-      <path d="M10 92 C 40 86, 80 86, 110 92" />
-      <path d="M42 90 Q 48 55 36 28" strokeWidth="2.8" />
-      <path d="M36 28 Q 18 20 8 32" />
-      <path d="M36 28 Q 25 10 32 4" />
-      <path d="M36 28 Q 48 12 56 24" />
-      <path d="M36 28 Q 50 36 46 48" />
-      <path d="M36 28 Q 24 38 18 50" />
-      <path d="M68 90 Q 64 60 74 36" strokeWidth="2.8" />
-      <path d="M74 36 Q 58 28 50 40" />
-      <path d="M74 36 Q 66 18 76 12" />
-      <path d="M74 36 Q 90 22 96 34" />
-      <path d="M74 36 Q 88 44 82 56" />
-    </svg>
-  );
-}
-
-function HouseOutlineIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={cn("pointer-events-none select-none transition-colors", className)}
-    >
-      <path d="M15 48 L 50 18 L 85 48" strokeWidth="2.8" />
-      <path d="M68 33 V 22 H 78 V 42" />
-      <path d="M22 46 V 84 H 78 V 46" />
-      <path d="M42 84 V 58 H 58 V 84" />
-    </svg>
-  );
-}
-
-function SparklesOutlineIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={cn("pointer-events-none select-none transition-colors", className)}
-    >
-      <path d="M45 10 C 45 32, 62 48, 85 48 C 62 48, 45 65, 45 88 C 45 65, 28 48, 5 48 C 28 48, 45 32, 45 10 Z" />
-      <path d="M78 8 C 78 16, 85 22, 94 22 C 85 22, 78 29, 78 37 C 78 29, 71 22, 62 22 C 71 22, 78 16, 78 8 Z" />
-      <path d="M22 65 C 22 72, 28 78, 36 78 C 28 78, 22 84, 22 92 C 22 84, 16 78, 8 78 C 16 78, 22 72, 22 65 Z" />
-    </svg>
-  );
-}
-
-function MountainOutlineIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={cn("pointer-events-none select-none transition-colors", className)}
-    >
-      <path d="M10 85 L 45 25 L 75 75 L 85 60 L 95 85 Z" />
-      <path d="M35 42 L 45 50 L 55 42" />
-      <circle cx="78" cy="25" r="8" strokeDasharray="2 2" />
-    </svg>
-  );
-}
-
-function CoffeeOutlineIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={cn("pointer-events-none select-none transition-colors", className)}
-    >
-      <path d="M20 35 H 70 V 70 C 70 78, 62 84, 52 84 H 38 C 28 84, 20 78, 20 70 Z" />
-      <path d="M70 45 H 80 C 86 45, 90 50, 90 56 C 90 62, 86 67, 80 67 H 70" />
-      <path d="M32 20 Q 35 12 32 6" />
-      <path d="M45 20 Q 48 12 45 6" />
-      <path d="M58 20 Q 61 12 58 6" />
-    </svg>
-  );
-}
-
-const VECTOR_ICONS = [
-  PalmTreesIcon,
-  HouseOutlineIcon,
-  SparklesOutlineIcon,
-  MountainOutlineIcon,
-  CoffeeOutlineIcon,
-];
-
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useCurrentUser();
@@ -152,19 +38,24 @@ export function DashboardPage() {
   const { users } = useUsers();
   const { defaultCurrency } = useCurrency();
 
-  const userMap = useMemo(() => {
-    const map = new Map<string, { name: string; initials: string; color: string }>();
-    users.forEach((u) => {
-      const parts = (u.name || u.email || "User").split(" ");
-      const inits = parts.map((p) => p[0]).slice(0, 2).join("").toUpperCase() || "U";
-      map.set(u.id, {
-        name: u.name || u.email || "User",
-        initials: inits,
-        color: u.id === currentUserId ? "bg-[#0055FF] text-white" : "bg-muted text-foreground",
-      });
-    });
-    return map;
-  }, [users, currentUserId]);
+  const isCurrentUserEntity = (userId: string | undefined): boolean => {
+    if (!userId) return false;
+    return (
+      userId === currentUserId ||
+      userId === "user_self" ||
+      userId === "current_user" ||
+      userId === currentUser?.googleSub
+    );
+  };
+
+  const getUserName = (userId: string | undefined, fallbackObj?: any): string => {
+    if (!userId) return "Someone";
+    if (isCurrentUserEntity(userId)) {
+      return currentUser?.name || "You";
+    }
+    const found = users.find((u) => u.id === userId || u.googleSub === userId);
+    return found?.name || found?.email || fallbackObj?.name || fallbackObj?.email || "Friend";
+  };
 
   // Flatten all splits for calculations
   const allSplitsList = useMemo(() => {
@@ -179,7 +70,7 @@ export function DashboardPage() {
     return calculateUserBalances(currentUserId, expenses, allSplitsList, settlements);
   }, [currentUserId, expenses, allSplitsList, settlements]);
 
-  // Determine if user has recorded live data yet
+  // Determine active data
   const activeExpenses = useMemo(() => {
     return (expenses || []).filter((e) => !e.deletedAt);
   }, [expenses]);
@@ -241,8 +132,6 @@ export function DashboardPage() {
           ? "You owe"
           : "All settled up";
 
-      const IconComponent = VECTOR_ICONS[idx % VECTOR_ICONS.length];
-
       return {
         group: g,
         displayAmount,
@@ -250,7 +139,6 @@ export function DashboardPage() {
         isPositive,
         isNegative,
         memberCount: g.memberIds?.length ?? 1,
-        IconComponent,
       };
     });
   }, [sortedGroups, activeExpenses, settlements, currentUserId, allSplitsList, curr]);
@@ -260,10 +148,9 @@ export function DashboardPage() {
     return userBalance.pairwise
       .filter((p) => p.amountMinor > 0)
       .map((p) => {
-        const isUserDebtor = p.fromUserId === currentUserId;
+        const isUserDebtor = isCurrentUserEntity(p.fromUserId);
         const otherUserId = isUserDebtor ? p.toUserId : p.fromUserId;
-        const otherUser = users.find((u) => u.id === otherUserId);
-        const name = otherUser?.name || "Friend";
+        const name = getUserName(otherUserId);
         const inits = name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase() || "FR";
         return {
           id: otherUserId,
@@ -279,17 +166,16 @@ export function DashboardPage() {
           currency: p.currency || curr,
         };
       });
-  }, [userBalance.pairwise, currentUserId, users, curr]);
+  }, [userBalance.pairwise, currentUserId, users, curr, currentUser]);
 
   // Display recent activity items derived from real expenses
   const recentActivityList = useMemo(() => {
     return activeExpenses.slice(0, 6).map((exp) => {
       const grp = activeGroups.find((g) => g.id === exp.groupId);
-      const payer = users.find((u) => u.id === exp.paidBy);
-      const isCurrentPayer = exp.paidBy === currentUserId;
-      const payerName = isCurrentPayer ? "You" : payer?.name || "Friend";
+      const isCurrentPayer = isCurrentUserEntity(exp.paidBy);
+      const payerName = isCurrentPayer ? (currentUser?.name || "You") : getUserName(exp.paidBy);
       const payerInits = isCurrentPayer
-        ? "YOU"
+        ? (currentUser?.name ? currentUser.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() : "YOU")
         : payerName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "FR";
 
       // Icon and color badge that reacts properly to dark & light modes
@@ -369,7 +255,7 @@ export function DashboardPage() {
         iconBg,
       };
     });
-  }, [activeExpenses, activeGroups, users, currentUserId]);
+  }, [activeExpenses, activeGroups, users, currentUserId, currentUser]);
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-in fade-in-50 duration-300 pb-16">
@@ -417,7 +303,6 @@ export function DashboardPage() {
 
           {/* Sub Metrics: People Owe You & You Owe */}
           <div className="flex items-center gap-6 sm:gap-8 flex-wrap">
-            {/* Divider */}
             <div className="hidden lg:block h-12 w-[1.5px] bg-black/15" />
 
             {/* People Owe You */}
@@ -428,7 +313,6 @@ export function DashboardPage() {
               <p className="text-xs sm:text-sm text-black/75 font-semibold">People owe you</p>
             </div>
 
-            {/* Divider */}
             <div className="hidden sm:block h-12 w-[1.5px] bg-black/15" />
 
             {/* You Owe */}
@@ -451,7 +335,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 3. MIDDLE ROW: RECENT GROUPS & ACTION */}
+      {/* 3. MIDDLE ROW: RECENT GROUPS */}
       {hasGroups ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -471,12 +355,29 @@ export function DashboardPage() {
           <div className="block sm:hidden">
             {groupCardsData[0] && (() => {
               const item = groupCardsData[0];
-              const Icon = item.IconComponent;
+              const hasCover = Boolean(item.group.imageUrl);
+
               return (
                 <Link
                   to={`/groups/${item.group.id}`}
-                  className="group rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[200px] shadow-sm bg-[#0052FF] text-white"
+                  className={cn(
+                    "group rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[200px] shadow-sm",
+                    hasCover
+                      ? "text-white border border-white/10"
+                      : "bg-[#0052FF] text-white"
+                  )}
                 >
+                  {hasCover && (
+                    <>
+                      <img
+                        src={item.group.imageUrl}
+                        alt={item.group.name}
+                        className="absolute inset-0 h-full w-full object-cover pointer-events-none select-none"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-black/35 pointer-events-none select-none" />
+                    </>
+                  )}
+
                   <div className="flex items-start justify-between relative z-10">
                     <div className="min-w-0 pr-2">
                       <h3 className="text-2xl font-black tracking-tight truncate text-white group-hover:underline">
@@ -499,8 +400,6 @@ export function DashboardPage() {
                       {item.statusText}
                     </p>
                   </div>
-
-                  <Icon className="absolute right-[-10px] bottom-[-10px] w-32 h-32 pointer-events-none select-none text-white/20" />
                 </Link>
               );
             })()}
@@ -509,8 +408,8 @@ export function DashboardPage() {
           {/* On Tablet & PC: Show up to 3 groups */}
           <div className="hidden sm:grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
             {groupCardsData.slice(0, 3).map((item, idx) => {
-              const Icon = item.IconComponent;
               const isFeatured = idx === 0;
+              const hasCover = Boolean(item.group.imageUrl);
 
               return (
                 <Link
@@ -518,18 +417,31 @@ export function DashboardPage() {
                   to={`/groups/${item.group.id}`}
                   className={cn(
                     "group rounded-3xl p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between min-h-[200px] sm:min-h-[220px] transition-all hover:-translate-y-1 shadow-xs",
-                    isFeatured
+                    hasCover
+                      ? "text-white border border-white/10"
+                      : isFeatured
                       ? "bg-[#0052FF] text-white shadow-sm"
                       : "bg-card border border-border/80 text-foreground"
                   )}
                 >
+                  {hasCover && (
+                    <>
+                      <img
+                        src={item.group.imageUrl}
+                        alt={item.group.name}
+                        className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none select-none"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-black/35 pointer-events-none select-none" />
+                    </>
+                  )}
+
                   {/* Top Info */}
                   <div className="flex items-start justify-between relative z-10">
                     <div className="min-w-0 pr-2">
                       <h3
                         className={cn(
                           "text-xl sm:text-2xl font-black tracking-tight truncate",
-                          isFeatured
+                          hasCover || isFeatured
                             ? "text-white group-hover:underline"
                             : "text-foreground group-hover:text-[#0055FF] transition-colors"
                         )}
@@ -539,7 +451,7 @@ export function DashboardPage() {
                       <p
                         className={cn(
                           "text-xs font-medium mt-0.5",
-                          isFeatured ? "text-white/80" : "text-muted-foreground"
+                          hasCover || isFeatured ? "text-white/80" : "text-muted-foreground"
                         )}
                       >
                         {item.memberCount} member{item.memberCount === 1 ? "" : "s"}
@@ -548,7 +460,7 @@ export function DashboardPage() {
                     <div
                       className={cn(
                         "h-8 w-8 rounded-full flex items-center justify-center transition-colors shrink-0",
-                        isFeatured
+                        hasCover || isFeatured
                           ? "bg-white/15 group-hover:bg-white/25"
                           : "bg-muted group-hover:bg-primary/10"
                       )}
@@ -556,7 +468,7 @@ export function DashboardPage() {
                       <ArrowRight
                         className={cn(
                           "h-4 w-4",
-                          isFeatured
+                          hasCover || isFeatured
                             ? "text-white"
                             : "text-muted-foreground group-hover:text-primary"
                         )}
@@ -569,7 +481,7 @@ export function DashboardPage() {
                     <p
                       className={cn(
                         "text-3xl sm:text-4xl font-black tracking-tight",
-                        isFeatured ? "text-white" : "text-foreground"
+                        hasCover || isFeatured ? "text-white" : "text-foreground"
                       )}
                     >
                       {item.displayAmount}
@@ -577,27 +489,17 @@ export function DashboardPage() {
                     <p
                       className={cn(
                         "text-xs font-medium mt-0.5",
-                        isFeatured ? "text-white/80" : "text-muted-foreground"
+                        hasCover || isFeatured ? "text-white/80" : "text-muted-foreground"
                       )}
                     >
                       {item.statusText}
                     </p>
                   </div>
-
-                  {/* Vector line art graphic: reacts cleanly to dark/light theme */}
-                  <Icon
-                    className={cn(
-                      "absolute right-[-10px] bottom-[-10px] w-32 h-32 pointer-events-none select-none transition-colors",
-                      isFeatured
-                        ? "text-white/20 sm:text-white/25"
-                        : "text-foreground/10 dark:text-foreground/15"
-                    )}
-                  />
                 </Link>
               );
             })}
 
-            {/* If less than 3 groups, render a "+ Add Group" card on tablet/desktop */}
+            {/* Add Group card if fewer than 3 */}
             {groupCardsData.length < 3 && (
               <Link
                 to="/groups/new"
@@ -640,8 +542,6 @@ export function DashboardPage() {
               <span>Create Group</span>
             </Button>
           </div>
-
-          <PalmTreesIcon className="absolute right-[-15px] bottom-[-20px] w-48 h-48 text-foreground/5 pointer-events-none select-none" />
         </div>
       )}
 

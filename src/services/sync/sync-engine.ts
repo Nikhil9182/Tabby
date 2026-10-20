@@ -21,6 +21,8 @@ import {
   serializeMember,
   deserializeMember,
   serializeOperationLog,
+  serializeGroupMetadata,
+  deserializeGroupMetadata,
 } from '../sheets/schema';
 import type {
   SyncOperation,
@@ -48,8 +50,13 @@ export class SyncEngine {
       }
     });
 
-    googleAuthService.onAuthStateChange((_state) => {
+    googleAuthService.onAuthStateChange((state) => {
       this.notifyStatusChange();
+      if (state === 'connected' && onlineDetector.isOnline()) {
+        this.startSync().catch((err) => {
+          console.error('Auto-sync on sign-in error:', err);
+        });
+      }
     });
   }
 
@@ -196,7 +203,45 @@ export class SyncEngine {
     await this.notifyStatusChange();
 
     try {
-      // 1. Fetch remote changes for all known sources
+      // 1. Discover remote spreadsheets from Drive Tabby folder
+      try {
+        const driveFiles = await googleDriveService.listTabbyFiles();
+        for (const file of driveFiles) {
+          if (!file.id || !file.name) continue;
+          let fileType: 'group' | 'personal' = 'personal';
+          let logicalId = file.id;
+
+          if (file.name.startsWith('Tabby_Group_')) {
+            fileType = 'group';
+            logicalId = file.name.replace('Tabby_Group_', '');
+          } else if (file.name.startsWith('Tabby_Personal_')) {
+            fileType = 'personal';
+            logicalId = file.name.replace('Tabby_Personal_', '');
+          }
+
+          const existingMeta = await db.fileMetadata.where('logicalId').equals(logicalId).first();
+          if (!existingMeta) {
+            await db.fileMetadata.put({
+              id: crypto.randomUUID(),
+              fileType,
+              logicalId,
+              googleFileId: file.id,
+              name: file.name,
+              lastSyncedAt: new Date().toISOString(),
+            });
+          } else if (existingMeta.googleFileId !== file.id) {
+            await db.fileMetadata.update(existingMeta.id, {
+              googleFileId: file.id,
+              name: file.name,
+            });
+          }
+        }
+      } catch (driveErr) {
+        console.warn('Error listing Tabby files from Google Drive:', driveErr);
+      }
+
+      // 2. Fetch remote changes for all known sources
+      // Remote Drive data overrides local IndexedDB
       const allMetadata = await db.fileMetadata.toArray();
       for (const meta of allMetadata) {
         try {
@@ -206,7 +251,10 @@ export class SyncEngine {
         }
       }
 
-      // 2. Process local pending outbox operations
+      // 3. If Drive does not have the data or has missing records, push current local data to Drive
+      await this.pushLocalDataToDrive();
+
+      // 4. Process local pending outbox operations
       const result = await this.processOutbox();
       this.lastSyncedAt = new Date().toISOString();
       return result;
@@ -264,6 +312,24 @@ export class SyncEngine {
 
       if (existingOp) {
         // Already successfully applied remotely
+        await syncRepository.markSynced(operation.id);
+        return;
+      }
+
+      // Special handling for group metadata
+      if (operation.entityType === 'group') {
+        const groupObj = typeof operation.payload === 'string'
+          ? JSON.parse(operation.payload)
+          : (operation.payload || (await db.groups.get(operation.entityId)));
+        if (groupObj) {
+          const serializedGroup = serializeGroupMetadata(groupObj);
+          await googleSheetsService.updateRows(
+            spreadsheetId,
+            'Metadata',
+            'A2:B10',
+            serializedGroup
+          );
+        }
         await syncRepository.markSynced(operation.id);
         return;
       }
@@ -379,103 +445,29 @@ export class SyncEngine {
     });
   }
 
-  async fetchRemoteChanges(sourceId: string): Promise<void> {
+  async fetchRemoteChanges(sourceId: string): Promise<number> {
     const metadata = await db.fileMetadata.where('logicalId').equals(sourceId).first();
     if (!metadata?.googleFileId) {
-      return;
+      return 0;
     }
 
     const spreadsheetId = metadata.googleFileId;
     const isGroup = metadata.fileType === 'group';
+    let remoteRecordsFound = 0;
 
-    // Fetch expenses
-    try {
-      const expenseRows = await googleSheetsService.getSheetData(spreadsheetId, 'Expenses');
-      if (expenseRows.length > 1) {
-        // Skip header row
-        const dataRows = expenseRows.slice(1);
-        for (const row of dataRows) {
-          if (!row[0]) continue;
-          const remoteExpense = deserializeExpense(row);
-          const localExpense = await db.expenses.get(remoteExpense.id);
-
-          // If local doesn't exist or remote is strictly newer and not locally modified
-          if (!localExpense || (remoteExpense.updatedAt > localExpense.updatedAt)) {
-            // Check if there is an unsynced local pending operation on this entity
-            const pending = await db.syncOperations
-              .where('entityId')
-              .equals(remoteExpense.id)
-              .filter((op) => op.status === 'pending')
-              .first();
-
-            if (!pending) {
-              await db.expenses.put(remoteExpense);
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`Failed to pull Expenses from sheet ${spreadsheetId}:`, err);
-    }
-
+    // 1. If group spreadsheet: fetch group metadata and members
     if (isGroup) {
-      // Fetch splits
       try {
-        const splitRows = await googleSheetsService.getSheetData(spreadsheetId, 'Splits');
-        if (splitRows.length > 1) {
-          const dataRows = splitRows.slice(1);
-          for (const row of dataRows) {
-            if (!row[0]) continue;
-            const split = deserializeSplit(row);
-            await db.expenseSplits.put(split);
-          }
+        const metaRows = await googleSheetsService.getSheetData(spreadsheetId, 'Metadata');
+        const remoteGroup = deserializeGroupMetadata(metaRows);
+        if (remoteGroup) {
+          await db.groups.put(remoteGroup);
+          remoteRecordsFound++;
         }
       } catch (err) {
-        console.warn(`Failed to pull Splits from sheet ${spreadsheetId}:`, err);
+        console.warn(`Failed to pull Group Metadata from sheet ${spreadsheetId}:`, err);
       }
 
-      // Fetch settlements
-      try {
-        const settlementRows = await googleSheetsService.getSheetData(spreadsheetId, 'Settlements');
-        if (settlementRows.length > 1) {
-          const dataRows = settlementRows.slice(1);
-          for (const row of dataRows) {
-            if (!row[0]) continue;
-            const settlement = deserializeSettlement(row);
-            const local = await db.settlements.get(settlement.id);
-            if (!local || settlement.updatedAt > local.updatedAt) {
-              const pending = await db.syncOperations
-                .where('entityId')
-                .equals(settlement.id)
-                .filter((op) => op.status === 'pending')
-                .first();
-
-              if (!pending) {
-                await db.settlements.put(settlement);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn(`Failed to pull Settlements from sheet ${spreadsheetId}:`, err);
-      }
-
-      // Fetch settlement allocations
-      try {
-        const allocRows = await googleSheetsService.getSheetData(spreadsheetId, 'SettlementAllocations');
-        if (allocRows.length > 1) {
-          const dataRows = allocRows.slice(1);
-          for (const row of dataRows) {
-            if (!row[0]) continue;
-            const alloc = deserializeSettlementAllocation(row);
-            await db.settlementAllocations.put(alloc);
-          }
-        }
-      } catch (err) {
-        console.warn(`Failed to pull SettlementAllocations from sheet ${spreadsheetId}:`, err);
-      }
-
-      // Fetch group members
       try {
         const memberRows = await googleSheetsService.getSheetData(spreadsheetId, 'Members');
         if (memberRows.length > 1) {
@@ -484,6 +476,7 @@ export class SyncEngine {
             if (!row[0]) continue;
             const member = deserializeMember(row);
             await db.groupMemberships.put(member);
+            remoteRecordsFound++;
           }
         }
       } catch (err) {
@@ -499,10 +492,79 @@ export class SyncEngine {
             if (!row[0]) continue;
             const category = deserializeCategory(row);
             await db.categories.put(category);
+            remoteRecordsFound++;
           }
         }
       } catch (err) {
         console.warn(`Failed to pull Categories from sheet ${spreadsheetId}:`, err);
+      }
+    }
+
+    // 2. Fetch expenses - Remote Drive spreadsheet overrides local data
+    try {
+      const expenseRows = await googleSheetsService.getSheetData(spreadsheetId, 'Expenses');
+      if (expenseRows.length > 1) {
+        const dataRows = expenseRows.slice(1);
+        for (const row of dataRows) {
+          if (!row[0]) continue;
+          const remoteExpense = deserializeExpense(row);
+          // Drive spreadsheet data overrides local Dexie data
+          await db.expenses.put(remoteExpense);
+          remoteRecordsFound++;
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to pull Expenses from sheet ${spreadsheetId}:`, err);
+    }
+
+    // 3. If group: fetch splits, settlements, and settlement allocations
+    if (isGroup) {
+      // Fetch splits
+      try {
+        const splitRows = await googleSheetsService.getSheetData(spreadsheetId, 'Splits');
+        if (splitRows.length > 1) {
+          const dataRows = splitRows.slice(1);
+          for (const row of dataRows) {
+            if (!row[0]) continue;
+            const split = deserializeSplit(row);
+            await db.expenseSplits.put(split);
+            remoteRecordsFound++;
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to pull Splits from sheet ${spreadsheetId}:`, err);
+      }
+
+      // Fetch settlements
+      try {
+        const settlementRows = await googleSheetsService.getSheetData(spreadsheetId, 'Settlements');
+        if (settlementRows.length > 1) {
+          const dataRows = settlementRows.slice(1);
+          for (const row of dataRows) {
+            if (!row[0]) continue;
+            const settlement = deserializeSettlement(row);
+            await db.settlements.put(settlement);
+            remoteRecordsFound++;
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to pull Settlements from sheet ${spreadsheetId}:`, err);
+      }
+
+      // Fetch settlement allocations
+      try {
+        const allocRows = await googleSheetsService.getSheetData(spreadsheetId, 'SettlementAllocations');
+        if (allocRows.length > 1) {
+          const dataRows = allocRows.slice(1);
+          for (const row of dataRows) {
+            if (!row[0]) continue;
+            const alloc = deserializeSettlementAllocation(row);
+            await db.settlementAllocations.put(alloc);
+            remoteRecordsFound++;
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to pull SettlementAllocations from sheet ${spreadsheetId}:`, err);
       }
     }
 
@@ -512,6 +574,120 @@ export class SyncEngine {
       entityType: 'all',
       lastSyncedAt: new Date().toISOString(),
     });
+
+    return remoteRecordsFound;
+  }
+
+  /**
+   * Pushes local IndexedDB data to Google Sheets when Drive does not have data or has missing records.
+   */
+  async pushLocalDataToDrive(): Promise<void> {
+    // 1. Push local groups
+    const localGroups = await db.groups.toArray();
+    for (const group of localGroups) {
+      try {
+        const spreadsheetId = await this.ensureSpreadsheetForSource(group.id, true);
+        await this.queueSpreadsheetWrite(spreadsheetId, async () => {
+          // Check Metadata
+          const metaRows = await googleSheetsService.getSheetData(spreadsheetId, 'Metadata');
+          if (metaRows.length <= 1) {
+            const groupRows = serializeGroupMetadata(group);
+            await googleSheetsService.updateRows(spreadsheetId, 'Metadata', 'A2:B10', groupRows);
+          }
+
+          // Check Members
+          const localMembers = await db.groupMemberships.where('groupId').equals(group.id).toArray();
+          if (localMembers.length > 0) {
+            const remoteMembers = await googleSheetsService.getSheetData(spreadsheetId, 'Members');
+            const remoteUserIds = new Set((remoteMembers.slice(1) || []).map((r) => String(r[1])));
+            const membersToAppend = localMembers
+              .filter((m) => !remoteUserIds.has(m.userId))
+              .map((m) => serializeMember(m));
+            if (membersToAppend.length > 0) {
+              await googleSheetsService.appendRows(spreadsheetId, 'Members', membersToAppend);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn(`Failed to push local group ${group.id} to Drive:`, err);
+      }
+    }
+
+    // 2. Push local expenses
+    const localExpenses = await db.expenses.toArray();
+    for (const exp of localExpenses) {
+      if (exp.deletedAt) continue;
+      const isGroup = Boolean(exp.groupId);
+      const sourceId = exp.groupId || exp.sourceId || 'personal';
+      try {
+        const spreadsheetId = await this.ensureSpreadsheetForSource(sourceId, isGroup);
+        await this.queueSpreadsheetWrite(spreadsheetId, async () => {
+          const existing = await googleSheetsService.findRowById(spreadsheetId, 'Expenses', 0, exp.id);
+          if (!existing) {
+            const expRow = serializeExpense(exp);
+            await googleSheetsService.appendRows(spreadsheetId, 'Expenses', [expRow]);
+
+            if (isGroup) {
+              const localSplits = await db.expenseSplits.where('expenseId').equals(exp.id).toArray();
+              if (localSplits.length > 0) {
+                const splitRows = localSplits.map((s) => serializeSplit(s));
+                await googleSheetsService.appendRows(spreadsheetId, 'Splits', splitRows);
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.warn(`Failed to push local expense ${exp.id} to Drive:`, err);
+      }
+    }
+
+    // 3. Push local settlements
+    const localSettlements = await db.settlements.toArray();
+    for (const st of localSettlements) {
+      if (st.deletedAt) continue;
+      const isGroup = Boolean(st.groupId);
+      const sourceId = st.groupId || st.sourceId || 'personal';
+      try {
+        const spreadsheetId = await this.ensureSpreadsheetForSource(sourceId, isGroup);
+        await this.queueSpreadsheetWrite(spreadsheetId, async () => {
+          const existing = await googleSheetsService.findRowById(spreadsheetId, 'Settlements', 0, st.id);
+          if (!existing) {
+            const stRow = serializeSettlement(st);
+            await googleSheetsService.appendRows(spreadsheetId, 'Settlements', [stRow]);
+
+            const localAllocs = await db.settlementAllocations.where('settlementId').equals(st.id).toArray();
+            if (localAllocs.length > 0) {
+              const allocRows = localAllocs.map((a) => serializeSettlementAllocation(a));
+              await googleSheetsService.appendRows(spreadsheetId, 'SettlementAllocations', allocRows);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn(`Failed to push local settlement ${st.id} to Drive:`, err);
+      }
+    }
+
+    // 4. Push local categories
+    const localCategories = await db.categories.toArray();
+    if (localCategories.length > 0) {
+      try {
+        const currentUser = await db.users.where('isCurrentUser').equals(1).first();
+        const personalSourceId = currentUser?.id || 'personal';
+        const spreadsheetId = await this.ensureSpreadsheetForSource(personalSourceId, false);
+        await this.queueSpreadsheetWrite(spreadsheetId, async () => {
+          const existingCats = await googleSheetsService.getSheetData(spreadsheetId, 'Categories');
+          const existingCatIds = new Set((existingCats.slice(1) || []).map((r) => String(r[0])));
+          const catsToAppend = localCategories
+            .filter((c) => !existingCatIds.has(c.id))
+            .map((c) => serializeCategory(c));
+          if (catsToAppend.length > 0) {
+            await googleSheetsService.appendRows(spreadsheetId, 'Categories', catsToAppend);
+          }
+        });
+      } catch (err) {
+        console.warn('Failed to push local categories to Drive:', err);
+      }
+    }
   }
 
   reconcile(localOp: SyncOperation, remoteRowData: any[]): ConflictResolution {

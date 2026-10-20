@@ -26,11 +26,25 @@ export function SettlementRow({
   onClick,
   className,
 }: SettlementRowProps) {
-  const fromName = fromUser?.name || fromUser?.email || settlement.fromUserId;
-  const toName = toUser?.name || toUser?.email || settlement.toUserId;
+  const isYouFrom =
+    Boolean(currentUserId && settlement.fromUserId === currentUserId) ||
+    settlement.fromUserId === 'user_self' ||
+    settlement.fromUserId === 'current_user' ||
+    fromUser?.id === 'user_self' ||
+    fromUser?.id === 'current_user';
+  const isYouTo =
+    Boolean(currentUserId && settlement.toUserId === currentUserId) ||
+    settlement.toUserId === 'user_self' ||
+    settlement.toUserId === 'current_user' ||
+    toUser?.id === 'user_self' ||
+    toUser?.id === 'current_user';
 
-  const isYouFrom = currentUserId && settlement.fromUserId === currentUserId;
-  const isYouTo = currentUserId && settlement.toUserId === currentUserId;
+  const fromName = isYouFrom
+    ? 'You'
+    : fromUser?.name || fromUser?.email || (settlement.fromUserId === 'user_self' ? 'You' : settlement.fromUserId);
+  const toName = isYouTo
+    ? 'You'
+    : toUser?.name || toUser?.email || (settlement.toUserId === 'user_self' ? 'You' : settlement.toUserId);
 
   const settlementDateObj = new Date(settlement.settlementDate);
   const now = new Date();

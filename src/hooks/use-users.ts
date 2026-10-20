@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { User, SyncOperation } from '@/domain/models/types';
+import { db } from '@/storage/local/database';
 import { userRepository } from '@/storage/repositories/user-repository';
 import { syncRepository } from '@/storage/repositories/sync-repository';
 import { generateId, generateOperationId } from '@/lib/id';
@@ -41,7 +42,7 @@ export function useCurrentUser(): UseCurrentUserResult {
   } = useQuery<User | null, Error>({
     queryKey: ['current-user', googleUser?.sub],
     queryFn: async () => {
-      const existing = await userRepository.getCurrentUser();
+      let existing = await userRepository.getCurrentUser();
 
       // If we have an authenticated Google user but no local record or googleSub mismatch,
       // create or sync the local current user record
@@ -59,11 +60,35 @@ export function useCurrentUser(): UseCurrentUserResult {
             updatedAt: now,
           };
           await userRepository.setCurrentUser(syncedUser);
+          await userRepository.upsertUser({ ...syncedUser, id: 'user_self' });
+          await userRepository.upsertUser({ ...syncedUser, id: 'current_user' });
           return syncedUser;
         }
       }
 
-      return existing ?? null;
+      if (!existing) {
+        const now = new Date().toISOString();
+        const initialUser: User = {
+          id: generateId(),
+          name: googleUser?.name || 'You',
+          email: googleUser?.email || '',
+          googleSub: googleUser?.sub,
+          picture: googleUser?.picture,
+          isCurrentUser: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await userRepository.setCurrentUser(initialUser);
+        await userRepository.upsertUser({ ...initialUser, id: 'user_self' });
+        await userRepository.upsertUser({ ...initialUser, id: 'current_user' });
+        return initialUser;
+      }
+
+      // Ensure alias 'user_self' and 'current_user' are kept in sync with the user's name
+      await userRepository.upsertUser({ ...existing, id: 'user_self' });
+      await userRepository.upsertUser({ ...existing, id: 'current_user' });
+
+      return existing;
     },
   });
 
@@ -94,6 +119,32 @@ export function useCurrentUser(): UseCurrentUserResult {
       }
 
       await userRepository.setCurrentUser(current);
+
+      // Also ensure aliases 'user_self' and 'current_user' are stored with the exact same name
+      await userRepository.upsertUser({
+        ...current,
+        id: 'user_self',
+        isCurrentUser: true,
+      });
+      await userRepository.upsertUser({
+        ...current,
+        id: 'current_user',
+        isCurrentUser: true,
+      });
+
+      // Retroactively update any legacy records stored with 'user_self'
+      try {
+        const legacyExpenses = await db.expenses.where('paidBy').equals('user_self').toArray();
+        for (const exp of legacyExpenses) {
+          await db.expenses.update(exp.id, { paidBy: current.id });
+        }
+        const legacySplits = await db.expenseSplits.where('userId').equals('user_self').toArray();
+        for (const split of legacySplits) {
+          await db.expenseSplits.update(split.id, { userId: current.id });
+        }
+      } catch {
+        // Non-fatal if index not yet initialized
+      }
 
       const operationId = generateOperationId();
       const syncOp: SyncOperation = {

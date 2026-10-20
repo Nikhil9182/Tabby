@@ -1,4 +1,5 @@
 import type {
+  Group,
   Expense,
   ExpenseSplit,
   Settlement,
@@ -321,6 +322,45 @@ export function deserializeOperationLog(row: any[]): {
     payload: parsedPayload,
     appliedAt: String(row[5] || ''),
     userId: String(row[6] || ''),
+  };
+}
+
+export function serializeGroupMetadata(group: Group): any[][] {
+  return [
+    ['id', group.id],
+    ['name', group.name],
+    ['description', group.description || ''],
+    ['currency', group.currency || 'USD'],
+    ['imageUrl', group.imageUrl || ''],
+    ['createdBy', group.createdBy || ''],
+    ['isArchived', String(Boolean(group.isArchived))],
+    ['createdAt', group.createdAt || new Date().toISOString()],
+    ['updatedAt', group.updatedAt || new Date().toISOString()],
+  ];
+}
+
+export function deserializeGroupMetadata(rows: any[][]): Group | null {
+  if (!rows || rows.length <= 1) return null;
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row && row[0] !== undefined) {
+      map.set(String(row[0]).trim(), String(row[1] ?? ''));
+    }
+  }
+  const id = map.get('id');
+  const name = map.get('name');
+  if (!id || !name) return null;
+
+  return {
+    id,
+    name,
+    description: map.get('description') || undefined,
+    currency: map.get('currency') || 'USD',
+    imageUrl: map.get('imageUrl') || undefined,
+    createdBy: map.get('createdBy') || '',
+    isArchived: map.get('isArchived') === 'true',
+    createdAt: map.get('createdAt') || new Date().toISOString(),
+    updatedAt: map.get('updatedAt') || new Date().toISOString(),
   };
 }
 

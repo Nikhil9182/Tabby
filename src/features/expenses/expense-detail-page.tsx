@@ -82,8 +82,15 @@ export function ExpenseDetailPage() {
   }
 
   // Payer
-  const payer = users.find((u) => u.id === expense.paidBy);
-  const payerName = expense.paidBy === currentUserId ? 'You' : payer?.name || payer?.email || expense.paidBy;
+  const isPayerSelf =
+    expense.paidBy === currentUserId ||
+    expense.paidBy === 'user_self' ||
+    expense.paidBy === 'current_user' ||
+    expense.paidBy === currentUser?.googleSub;
+  const payer = users.find((u) => u.id === expense.paidBy || u.googleSub === expense.paidBy);
+  const payerName = isPayerSelf
+    ? currentUser?.name || 'You'
+    : payer?.name || payer?.email || 'Friend';
 
   // Group
   const group = groups.find((g) => g.id === expense.groupId);
@@ -246,9 +253,13 @@ export function ExpenseDetailPage() {
 
             <div className="rounded-xl border border-border/60 overflow-hidden divide-y divide-border/40">
               {splits.map((split) => {
-                const u = users.find((user) => user.id === split.userId);
-                const isYou = split.userId === currentUserId;
-                const memberName = isYou ? 'You' : u?.name || u?.email || split.userId;
+                const isYou =
+                  split.userId === currentUserId ||
+                  split.userId === 'user_self' ||
+                  split.userId === 'current_user' ||
+                  split.userId === currentUser?.googleSub;
+                const u = users.find((user) => user.id === split.userId || user.googleSub === split.userId);
+                const memberName = isYou ? currentUser?.name || 'You' : u?.name || u?.email || 'Participant';
                 const percentage =
                   split.percentageBasisPoints !== undefined
                     ? `${(split.percentageBasisPoints / 100).toFixed(1)}%`
