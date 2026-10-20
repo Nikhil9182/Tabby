@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node -e \"require('fs').copyFileSync('dist/index.html', 'dist/404.html')\"",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview"
@@ -45,6 +47,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^10.13.0",
+    "gh-pages": "^6.3.0",
     "happy-dom": "^21.0.3",
     "jsdom": "^29.1.1",
     "oxlint": "^1.88.0",
