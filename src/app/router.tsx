@@ -22,7 +22,7 @@ const NotFoundPage = lazy(() => import("@/features/not-found/not-found-page"));
 
 export function AppRouter() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Suspense fallback={<PageSkeleton />}>
         <Routes>
           {/* Default redirect: / -> /dashboard */}

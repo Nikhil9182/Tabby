@@ -2,10 +2,11 @@
   "name": "tabby",
   "private": true,
   "version": "0.0.0",
+  "homepage": "https://nikhil9182.github.io/Tabby/",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node -e \"require('fs').copyFileSync('dist/index.html', 'dist/404.html')\"",
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview"

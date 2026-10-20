@@ -5,7 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/Tabby/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -18,4 +19,4 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
   },
-})
+}))
