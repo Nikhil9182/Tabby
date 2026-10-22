@@ -182,8 +182,8 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         }
       });
     } else {
-      // Personal contacts / friends (excluding current user and any placeholder aliases)
-      friends.map(f => f.person).forEach((u) => {
+      // Personal contacts / users (excluding current user and any placeholder aliases)
+      users.forEach((u) => {
         if (isCurrentEntity(u.id) || (u.googleSub && isCurrentEntity(u.googleSub))) {
           return;
         }
@@ -211,7 +211,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
     // Ensure any participant from existing expense is included if editing
     if (existingExpense?.participants) {
-      existingExpense.participants.forEach((pId) => {
+      existingExpense.participants.forEach((pId: string) => {
         if (!isCurrentEntity(pId) && !list.some((m) => m.id === pId)) {
           const u = users.find((user) => user.id === pId || user.googleSub === pId);
           list.push({
@@ -293,7 +293,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         const pctMap: Record<string, number> = {};
         const shareMap: Record<string, number> = {};
 
-        existingSplits.forEach((s) => {
+        existingSplits.forEach((s: any) => {
           exactMap[s.userId] = toMajorUnits(s.shareMinor, curr).toString();
           if (s.percentageBasisPoints !== undefined) {
             pctMap[s.userId] = s.percentageBasisPoints / 100;
@@ -490,15 +490,8 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     }));
 
     try {
-      let targetId = data.groupId;
-      if (targetId === 'personal' && selectedParticipants.some(id => id !== currentUserId)) {
-        const others = selectedParticipants.filter(id => id !== currentUserId);
-        if (others.length !== 1) throw new Error('Choose a group for expenses shared with more than one friend.');
-        const friendship = friends.find(f => f.person.id === others[0]);
-        if (!friendship) throw new Error('Accept a friend request before sharing an expense.');
-        targetId = friendship.invitation.sourceId;
-      }
-      const isGroup = targetId !== 'personal';
+      const isGroup = data.groupId !== 'personal';
+      const targetId = isGroup ? data.groupId : undefined;
       const expenseDateISO = new Date(data.expenseDate).toISOString();
 
       if (isEditing && expenseId) {
@@ -704,7 +697,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="personal">Personal Expense</SelectItem>
-                        {groups.filter(g => g.kind !== 'direct' || friends.some(f => f.invitation.sourceId === g.id)).map((g) => (
+                        {groups.map((g) => (
                           <SelectItem key={g.id} value={g.id}>
                             {g.name}
                           </SelectItem>

@@ -1,11 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { requireActiveParticipants } from '@/services/collaboration/access';
 import { z } from 'zod';
-import type { Settlement, SyncOperation } from '@/domain/models/types';
-import { settlementRepository } from '@/storage/repositories/settlement-repository';
-import { syncRepository } from '@/storage/repositories/sync-repository';
-import { generateId, generateOperationId } from '@/lib/id';
-import { notifySyncQueueUpdated } from './use-sync';
+import type { Settlement } from '@/domain/models/types';
+import { settlementService } from '@/services/supabase/settlement-service';
 
 export interface RecordSettlementInput {
   groupId?: string;
@@ -17,6 +13,7 @@ export interface RecordSettlementInput {
   settlementDate?: string;
   notes?: string;
   createdBy?: string;
+  exchangeRate?: number;
 }
 
 export const recordSettlementSchema = z
@@ -59,10 +56,24 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
   } = useQuery<Settlement[], Error>({
     queryKey,
     queryFn: async () => {
-      if (groupId) {
-        return await settlementRepository.getSettlementsByGroup(groupId);
-      }
-      return await settlementRepository.getAllSettlements();
+      const raw = await settlementService.getSettlements(groupId);
+      return raw.map((s) => ({
+        id: s.id,
+        sourceId: s.group_id,
+        groupId: s.group_id,
+        fromUserId: s.from_user_id,
+        toUserId: s.to_user_id,
+        amountMinor: s.amount_minor,
+        currency: s.currency,
+        settlementDate: s.settlement_date,
+        notes: s.notes || undefined,
+        exchangeRate: s.exchange_rate || 1.0,
+        exchangeRateDate: s.exchange_rate_date || undefined,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+        createdBy: s.created_by,
+        deletedAt: s.deleted_at,
+      }));
     },
   });
 
@@ -70,12 +81,15 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
     mutationFn: async (input: RecordSettlementInput): Promise<Settlement> => {
       const normalizedCurrency = (input.currency || 'USD').trim().toUpperCase();
       const normalizedDate = input.settlementDate || new Date().toISOString();
-      const sourceId = input.groupId || input.sourceId || input.fromUserId;
-      await requireActiveParticipants(input.groupId, [input.fromUserId, input.toUserId]);
+      const targetGroupId = input.groupId || input.sourceId;
+
+      if (!targetGroupId) {
+        throw new Error('Settlements must belong to a group.');
+      }
 
       recordSettlementSchema.parse({
-        groupId: input.groupId,
-        sourceId,
+        groupId: targetGroupId,
+        sourceId: targetGroupId,
         fromUserId: input.fromUserId,
         toUserId: input.toUserId,
         amountMinor: input.amountMinor,
@@ -85,132 +99,49 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
         createdBy: input.createdBy || input.fromUserId,
       });
 
-      const now = new Date().toISOString();
-      const settlementId = generateId();
-      const operationId = generateOperationId();
-
-      const settlement: Settlement = {
-        id: settlementId,
-        sourceId,
-        groupId: input.groupId,
+      const dbSettlement = await settlementService.createSettlement({
+        groupId: targetGroupId,
         fromUserId: input.fromUserId,
         toUserId: input.toUserId,
         amountMinor: input.amountMinor,
         currency: normalizedCurrency,
-        settlementDate: normalizedDate,
         notes: input.notes,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: input.createdBy || input.fromUserId,
-        operationId,
-        revision: 1,
+        settlementDate: normalizedDate,
+        exchangeRate: input.exchangeRate,
+      });
+
+      return {
+        id: dbSettlement.id,
+        sourceId: dbSettlement.group_id,
+        groupId: dbSettlement.group_id,
+        fromUserId: dbSettlement.from_user_id,
+        toUserId: dbSettlement.to_user_id,
+        amountMinor: dbSettlement.amount_minor,
+        currency: dbSettlement.currency,
+        settlementDate: dbSettlement.settlement_date,
+        notes: dbSettlement.notes || undefined,
+        exchangeRate: dbSettlement.exchange_rate || 1.0,
+        createdAt: dbSettlement.created_at,
+        updatedAt: dbSettlement.updated_at,
+        createdBy: dbSettlement.created_by,
       };
-
-      await settlementRepository.createSettlement(settlement);
-
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'settlement',
-        entityId: settlementId,
-        sourceId,
-        operationType: 'create',
-        payload: JSON.stringify(settlement),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return settlement;
     },
-    onMutate: async (newSettlementInput) => {
-      await queryClient.cancelQueries({ queryKey });
-      const previousSettlements = queryClient.getQueryData<Settlement[]>(queryKey);
-
-      const tempId = `temp_settlement_${Date.now()}`;
-      const now = new Date().toISOString();
-      const optimisticSettlement: Settlement = {
-        id: tempId,
-        sourceId: newSettlementInput.sourceId || newSettlementInput.groupId || newSettlementInput.fromUserId,
-        groupId: newSettlementInput.groupId,
-        fromUserId: newSettlementInput.fromUserId,
-        toUserId: newSettlementInput.toUserId,
-        amountMinor: newSettlementInput.amountMinor,
-        currency: (newSettlementInput.currency || 'USD').toUpperCase(),
-        settlementDate: newSettlementInput.settlementDate || now,
-        notes: newSettlementInput.notes,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: newSettlementInput.createdBy || newSettlementInput.fromUserId,
-        operationId: `op_temp_${tempId}`,
-        revision: 1,
-      };
-
-      queryClient.setQueryData<Settlement[]>(queryKey, (old = []) => [optimisticSettlement, ...old]);
-
-      return { previousSettlements };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previousSettlements) {
-        queryClient.setQueryData(queryKey, context.previousSettlements);
-      }
-    },
-    onSettled: () => {
+    onSuccess: (_data, input) => {
       void queryClient.invalidateQueries({ queryKey: ['settlements'] });
-      if (groupId) {
-        void queryClient.invalidateQueries({ queryKey: ['group-balances', groupId] });
-      } else {
-        void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
+      if (input.groupId) {
+        void queryClient.invalidateQueries({ queryKey: ['group', input.groupId] });
+        void queryClient.invalidateQueries({ queryKey: ['group-balances', input.groupId] });
       }
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      const existing = await settlementRepository.getSettlementById(id);
-      await settlementRepository.deleteSettlement(id);
-
-      if (existing) {
-        const now = new Date().toISOString();
-        const operationId = generateOperationId();
-        const syncOp: SyncOperation = {
-          id: generateId(),
-          operationId,
-          entityType: 'settlement',
-          entityId: id,
-          sourceId: existing.sourceId,
-          operationType: 'delete',
-          payload: JSON.stringify({ id, deletedAt: now }),
-          createdAt: now,
-          attemptCount: 0,
-          status: 'pending',
-        };
-        await syncRepository.addOperation(syncOp);
-        notifySyncQueueUpdated();
-      }
+      await settlementService.deleteSettlement(id);
     },
-    onMutate: async (deletedId) => {
-      await queryClient.cancelQueries({ queryKey });
-      const previousSettlements = queryClient.getQueryData<Settlement[]>(queryKey);
-
-      queryClient.setQueryData<Settlement[]>(queryKey, (old = []) =>
-        old.filter((s) => s.id !== deletedId)
-      );
-
-      return { previousSettlements };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previousSettlements) {
-        queryClient.setQueryData(queryKey, context.previousSettlements);
-      }
-    },
-    onSettled: () => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['settlements'] });
-      if (groupId) {
-        void queryClient.invalidateQueries({ queryKey: ['group-balances', groupId] });
-      }
+      void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
     },
   });
 
@@ -218,9 +149,9 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
     settlements,
     isLoading,
     error,
+    refetch,
     recordSettlement: (input: RecordSettlementInput) => recordMutation.mutateAsync(input),
     deleteSettlement: (id: string) => deleteMutation.mutateAsync(id),
-    refetch,
     isRecording: recordMutation.isPending,
     isDeleting: deleteMutation.isPending,
   };

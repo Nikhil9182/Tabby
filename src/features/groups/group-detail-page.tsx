@@ -1,5 +1,5 @@
 import { useCollaboration } from '@/hooks/use-collaboration';
-import { collaborationService } from '@/services/collaboration/collaboration-service';
+import { groupService } from '@/services/supabase/group-service';
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
@@ -167,7 +167,7 @@ export function GroupDetailPage() {
   const handleRemoveMember = async (userId: string) => {
     if (userId === group?.createdBy) return;
     try {
-      await collaborationService.removeMember(groupId, userId);
+      await groupService.removeMember(groupId, userId);
       await refetch();
     } catch (error) {
       setMemberError(error instanceof Error ? error.message : 'Could not remove collaborator.');
@@ -671,14 +671,13 @@ export function GroupDetailPage() {
                 <form onSubmit={handleAddMember} className="flex flex-col sm:flex-row gap-2.5 pb-4 border-b border-border/40">
                   <div className="flex-1">
                     <Input
-                      type="email" list="accepted-friends"
+                      type="email"
                       placeholder="friend@example.com"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       className="h-9 text-sm"
                     />
                   </div>
-<datalist id="accepted-friends">{friends.map(f => <option key={f.person.id} value={f.person.email}>{f.person.name}</option>)}</datalist>
                   <Button type="submit" size="sm" disabled={isBusy} className="h-9 gap-1.5 shrink-0">
                     <UserPlus className="h-4 w-4" />
                     <span>{isBusy ? 'Sending…' : 'Send invitation'}</span>
@@ -690,7 +689,11 @@ export function GroupDetailPage() {
                 <p className="text-xs text-rose-500 font-medium">{memberError}</p>
               )}
 
-              {invitations.filter(i => i.sourceId === groupId && ['pending', 'accepted'].includes(i.status)).map(i => <p key={i.id} className="text-sm text-muted-foreground break-all">{i.recipientEmail} · {i.status === 'accepted' ? 'Accepted, awaiting activation' : 'Invitation pending'}</p>)}
+              {invitations.filter(i => i.groupId === groupId && i.status === 'pending').map(i => (
+                <p key={i.id} className="text-sm text-muted-foreground break-all">
+                  {i.invitedEmail} · Invitation pending
+                </p>
+              ))}
               {/* Members List */}
               {members.filter(m => m.status === 'invited').map(m => <p key={m.userId} className="text-sm text-muted-foreground">{userMap.get(m.userId)?.email || 'Legacy contact'} · Requires a new invitation and acceptance</p>)}
               <div className="divide-y divide-border/40">

@@ -4,14 +4,10 @@ import {
   useState,
   useEffect,
   useCallback,
-  useRef,
   type ReactNode,
 } from 'react';
-import type { SyncOperation, AuthState } from '@/domain/models/types';
-import { syncRepository } from '@/storage/repositories/sync-repository';
 import { useAuth } from './use-auth';
 import { useQueryClient } from '@tanstack/react-query';
-import { syncEngine } from '@/services/sync/sync-engine';
 
 export interface SyncStatus {
   isOnline: boolean;
@@ -30,21 +26,15 @@ export interface SyncContextType {
   isOnline: boolean;
   hasConflicts: boolean;
   triggerSync: () => Promise<void>;
-  conflicts: SyncOperation[];
+  conflicts: any[];
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
-const LAST_SYNCED_KEY = 'tabby_last_synced_at';
 export const SYNC_QUEUE_EVENT = 'tabby:sync-queue-updated';
 
-/**
- * Dispatches a global event notifying listeners that local outbox sync queue changed.
- */
 export function notifySyncQueueUpdated(): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(SYNC_QUEUE_EVENT));
-  }
+  // No-op kept for backwards compatibility
 }
 
 export interface SyncProviderProps {
@@ -53,36 +43,13 @@ export interface SyncProviderProps {
 
 export function SyncProvider({ children }: SyncProviderProps) {
   const queryClient = useQueryClient();
-  // Use auth context for current auth state; fallback safely if used outside
-  const { authState: currentAuthState } = useAuth();
-  const syncInFlight = useRef(false);
+  const { authState } = useAuth();
 
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
   });
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [pendingCount, setPendingCount] = useState<number>(0);
-  const [conflicts, setConflicts] = useState<SyncOperation[]>([]);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() => {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(LAST_SYNCED_KEY);
-    }
-    return null;
-  });
-
-  // Refresh counts from IndexedDB
-  const refreshSyncData = useCallback(async () => {
-    try {
-      const [count, conflictList] = await Promise.all([
-        syncRepository.getPendingCount(),
-        syncRepository.getConflicts(),
-      ]);
-      setPendingCount(count);
-      setConflicts(conflictList);
-    } catch (err) {
-      console.error('Failed to read sync repository counts:', err);
-    }
-  }, []);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() => new Date().toISOString());
 
   // Listen to network status changes
   useEffect(() => {
@@ -90,7 +57,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
     const handleOnline = () => {
       setIsOnline(true);
-      void refreshSyncData();
+      // Automatically refetch server queries when network reconnects
+      void queryClient.invalidateQueries();
+      setLastSyncedAt(new Date().toISOString());
     };
 
     const handleOffline = () => {
@@ -104,90 +73,41 @@ export function SyncProvider({ children }: SyncProviderProps) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [refreshSyncData]);
+  }, [queryClient]);
 
-  // Initial fetch and custom event subscriptions
-  useEffect(() => {
-    void refreshSyncData();
-
-    if (typeof window === 'undefined') return;
-
-    const handleQueueUpdated = () => {
-      void refreshSyncData();
-    };
-
-    window.addEventListener(SYNC_QUEUE_EVENT, handleQueueUpdated);
-
-    // Periodic check every 5 seconds
-    const interval = setInterval(() => {
-      void refreshSyncData();
-    }, 5000);
-
-    return () => {
-      window.removeEventListener(SYNC_QUEUE_EVENT, handleQueueUpdated);
-      clearInterval(interval);
-    };
-  }, [refreshSyncData]);
-
-  // Trigger manual or automatic sync
   const triggerSync = useCallback(async (): Promise<void> => {
-    if (syncInFlight.current) return;
-    if (!isOnline) {
-      console.warn('Cannot sync while offline');
-      return;
-    }
-
-    syncInFlight.current = true;
     setIsSyncing(true);
     try {
-      if (currentAuthState !== 'connected') return;
-      await syncEngine.startSync();
-      await queryClient.invalidateQueries();
-
-      const now = new Date().toISOString();
-      setLastSyncedAt(now);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(LAST_SYNCED_KEY, now);
-      }
-      await refreshSyncData();
-    } catch (err) {
-      console.error('Error during synchronization:', err);
-      throw err;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['expenses'] }),
+        queryClient.invalidateQueries({ queryKey: ['groups'] }),
+        queryClient.invalidateQueries({ queryKey: ['settlements'] }),
+        queryClient.invalidateQueries({ queryKey: ['current-user'] }),
+      ]);
+      setLastSyncedAt(new Date().toISOString());
     } finally {
-      syncInFlight.current = false;
       setIsSyncing(false);
     }
-  }, [isOnline, refreshSyncData, currentAuthState, queryClient]);
-
-  useEffect(() => {
-    if (!isOnline || currentAuthState !== 'connected') return;
-    const run = () => { void triggerSync().catch(console.error); };
-    const initial = setTimeout(run, 1000);
-    const interval = setInterval(run, 30000);
-    return () => { clearTimeout(initial); clearInterval(interval); };
-    // The engine serializes syncs; don't reset timers on every status transition.
-  }, [isOnline, currentAuthState, triggerSync]);
-
-  const hasConflicts = conflicts.length > 0;
+  }, [queryClient]);
 
   const syncStatus: SyncStatus = {
     isOnline,
     isSyncing,
-    pendingCount,
+    pendingCount: 0, // No offline pending writes; writes are committed directly to Supabase
     lastSyncedAt,
-    hasConflicts,
-    authState: currentAuthState,
+    hasConflicts: false,
+    authState,
   };
 
   const value: SyncContextType = {
     syncStatus,
-    pendingCount,
+    pendingCount: 0,
     lastSyncedAt,
     isSyncing,
     isOnline,
-    hasConflicts,
+    hasConflicts: false,
     triggerSync,
-    conflicts,
+    conflicts: [],
   };
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
@@ -205,5 +125,3 @@ export function useSyncStatus(): SyncStatus {
   const { syncStatus } = useSync();
   return syncStatus;
 }
-
-export { SyncContext };

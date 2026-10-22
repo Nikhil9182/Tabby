@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import type {
@@ -7,26 +8,27 @@ import type {
   ExpenseSplit,
   Settlement,
   MemberRole,
-  SyncOperation,
 } from '@/domain/models/types';
-import { groupRepository } from '@/storage/repositories/group-repository';
-import { expenseRepository } from '@/storage/repositories/expense-repository';
-import { settlementRepository } from '@/storage/repositories/settlement-repository';
-import { syncRepository } from '@/storage/repositories/sync-repository';
+import {
+  groupService,
+  type GroupWithMembers,
+  type CreateGroupInput as SvcCreateGroupInput,
+} from '@/services/supabase/group-service';
+import { expenseService } from '@/services/supabase/expense-service';
+import { settlementService } from '@/services/supabase/settlement-service';
+import { realtimeService } from '@/services/supabase/realtime-service';
 import {
   calculateGroupBalances,
   type PairwiseBalance,
   type UserBalance,
   type GroupBalances,
 } from '@/domain/balances/balance-engine';
-import { generateId, generateOperationId } from '@/lib/id';
-import { notifySyncQueueUpdated } from './use-sync';
 
 export interface CreateGroupInput {
   name: string;
   description?: string;
   currency?: string;
-  createdBy: string;
+  createdBy?: string;
   imageUrl?: string;
   members?: Array<{
     userId: string;
@@ -46,7 +48,7 @@ export const createGroupInputSchema = z.object({
   name: z.string().trim().min(1, 'Group name is required').max(100),
   description: z.string().max(500).optional(),
   currency: z.string().trim().length(3).toUpperCase().default('USD'),
-  createdBy: z.string().min(1, 'Creator user ID is required'),
+  createdBy: z.string().optional(),
   imageUrl: z.string().optional(),
   members: z
     .array(
@@ -57,6 +59,22 @@ export const createGroupInputSchema = z.object({
     )
     .optional(),
 });
+
+function mapDbGroupToGroup(g: any): Group {
+  return {
+    id: g.id,
+    name: g.name,
+    description: g.description || undefined,
+    createdBy: g.created_by,
+    currency: g.default_currency || 'USD',
+    defaultCurrency: g.default_currency || 'USD',
+    imageUrl: g.image_url || undefined,
+    isArchived: !!g.archived_at,
+    createdAt: g.created_at,
+    updatedAt: g.updated_at,
+    archivedAt: g.archived_at || undefined,
+  };
+}
 
 export function useGroups() {
   const queryClient = useQueryClient();
@@ -69,72 +87,24 @@ export function useGroups() {
     refetch,
   } = useQuery<Group[], Error>({
     queryKey,
-    queryFn: () => groupRepository.getAllGroups(),
+    queryFn: async () => {
+      const dbGroups = await groupService.getUserGroups();
+      return dbGroups.map(mapDbGroupToGroup);
+    },
   });
 
   const createGroupMutation = useMutation({
     mutationFn: async (input: CreateGroupInput): Promise<Group> => {
       createGroupInputSchema.parse(input);
 
-      const now = new Date().toISOString();
-      const groupId = generateId();
-      const operationId = generateOperationId();
-      const currency = (input.currency || 'USD').toUpperCase();
-
-      const group: Group = {
-        id: groupId,
-        name: input.name.trim(),
+      const dbGroup = await groupService.createGroup({
+        name: input.name,
         description: input.description,
-        currency,
-        createdBy: input.createdBy,
+        currency: input.currency || 'USD',
         imageUrl: input.imageUrl,
-        isArchived: false,
-        createdAt: now,
-        updatedAt: now,
-      };
+      });
 
-      const ownerMembership: GroupMembership = {
-        groupId,
-        userId: input.createdBy,
-        role: 'owner',
-        status: 'active',
-        joinedAt: now,
-        updatedAt: now,
-      };
-
-      await groupRepository.createGroup(group, ownerMembership);
-
-      if (input.members && input.members.length > 0) {
-        for (const member of input.members) {
-          if (member.userId !== input.createdBy) {
-            await groupRepository.addMember({
-              groupId,
-              userId: member.userId,
-              role: member.role || 'member',
-              status: 'invited',
-              joinedAt: now,
-              updatedAt: now,
-            });
-          }
-        }
-      }
-
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'group',
-        entityId: groupId,
-        sourceId: groupId,
-        operationType: 'create',
-        payload: JSON.stringify(group),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return group;
+      return mapDbGroupToGroup(dbGroup);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['groups'] });
@@ -143,41 +113,14 @@ export function useGroups() {
 
   const updateGroupMutation = useMutation({
     mutationFn: async (input: UpdateGroupInput): Promise<Group> => {
-      const existing = await groupRepository.getGroupById(input.id);
-      if (!existing) {
-        throw new Error(`Group with id ${input.id} not found`);
-      }
-
-      const now = new Date().toISOString();
-      const operationId = generateOperationId();
-
-      const updatedGroup: Group = {
-        ...existing,
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.currency !== undefined ? { currency: input.currency.toUpperCase() } : {}),
-        ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
-        updatedAt: now,
-      };
-
-      await groupRepository.updateGroup(updatedGroup);
-
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'group',
-        entityId: input.id,
-        sourceId: input.id,
-        operationType: 'update',
-        payload: JSON.stringify(updatedGroup),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return updatedGroup;
+      const dbGroup = await groupService.updateGroup({
+        id: input.id,
+        name: input.name,
+        description: input.description,
+        currency: input.currency,
+        imageUrl: input.imageUrl,
+      });
+      return mapDbGroupToGroup(dbGroup);
     },
     onSuccess: (updatedGroup) => {
       void queryClient.invalidateQueries({ queryKey: ['groups'] });
@@ -187,24 +130,7 @@ export function useGroups() {
 
   const archiveGroupMutation = useMutation({
     mutationFn: async (groupId: string): Promise<void> => {
-      await groupRepository.archiveGroup(groupId);
-
-      const now = new Date().toISOString();
-      const operationId = generateOperationId();
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'group',
-        entityId: groupId,
-        sourceId: groupId,
-        operationType: 'update',
-        payload: JSON.stringify({ id: groupId, isArchived: true, archivedAt: now }),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
+      await groupService.archiveGroup(groupId);
     },
     onSuccess: (_data, groupId) => {
       void queryClient.invalidateQueries({ queryKey: ['groups'] });
@@ -213,7 +139,7 @@ export function useGroups() {
   });
 
   return {
-    groups: groups.filter(g => g.kind !== 'direct'),
+    groups: groups.filter((g) => g.kind !== 'direct'),
     allGroups: groups,
     isLoading,
     isCreating: createGroupMutation.isPending,
@@ -228,31 +154,70 @@ export function useGroups() {
 export function useGroup(groupId: string) {
   const queryClient = useQueryClient();
 
+  // Subscribe to Realtime Postgres changes for this group
+  useEffect(() => {
+    if (!groupId) return;
+    const unsubscribe = realtimeService.subscribeToGroup(groupId, queryClient);
+    return () => unsubscribe();
+  }, [groupId, queryClient]);
+
   const {
-    data: group,
+    data: groupDetails,
     isLoading: isLoadingGroup,
     error: groupError,
-  } = useQuery<Group | undefined>({
+  } = useQuery<GroupWithMembers | null>({
     queryKey: ['group', groupId],
-    queryFn: () => groupRepository.getGroupById(groupId),
+    queryFn: () => groupService.getGroupById(groupId),
     enabled: !!groupId,
   });
 
-  const { data: members = [], isLoading: isLoadingMembers } = useQuery<GroupMembership[]>({
-    queryKey: ['group-members', groupId],
-    queryFn: () => groupRepository.getGroupMembers(groupId),
-    enabled: !!groupId,
-  });
+  const group: Group | undefined = groupDetails ? mapDbGroupToGroup(groupDetails) : undefined;
+
+  const members: GroupMembership[] = (groupDetails?.members || []).map((m) => ({
+    id: m.id,
+    groupId,
+    userId: m.userId,
+    role: m.role,
+    status: m.status,
+    joinedAt: m.joinedAt,
+  }));
 
   const { data: expenses = [], isLoading: isLoadingExpenses } = useQuery<Expense[]>({
     queryKey: ['expenses', { groupId }],
-    queryFn: () => expenseRepository.getExpensesByGroup(groupId),
+    queryFn: async () => {
+      const expList = await expenseService.getExpenses({ groupId });
+      return expList.map((e) => ({
+        ...e,
+        sourceType: 'group',
+        sourceId: groupId,
+      }));
+    },
     enabled: !!groupId,
   });
 
   const { data: settlements = [], isLoading: isLoadingSettlements } = useQuery<Settlement[]>({
     queryKey: ['settlements', { groupId }],
-    queryFn: () => settlementRepository.getSettlementsByGroup(groupId),
+    queryFn: async () => {
+      const rawSettlements = await settlementService.getSettlements(groupId);
+      return rawSettlements.map((s) => ({
+        id: s.id,
+        sourceType: 'group',
+        sourceId: s.group_id,
+        groupId: s.group_id,
+        fromUserId: s.from_user_id,
+        toUserId: s.to_user_id,
+        amountMinor: s.amount_minor,
+        currency: s.currency,
+        settlementDate: s.settlement_date,
+        notes: s.notes || undefined,
+        exchangeRate: s.exchange_rate || 1.0,
+        exchangeRateDate: s.exchange_rate_date || undefined,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+        createdBy: s.created_by,
+        deletedAt: s.deleted_at,
+      }));
+    },
     enabled: !!groupId,
   });
 
@@ -260,21 +225,31 @@ export function useGroup(groupId: string) {
     queryKey: ['group-balances', groupId, expenses.length, settlements.length],
     queryFn: async () => {
       if (!group) return null;
-      // Fetch splits for all group expenses
+      const expenseIds = expenses.map((e) => e.id);
+      const splitsMap = await expenseService.getSplitsForExpenses(expenseIds);
       const allSplits: ExpenseSplit[] = [];
-      await Promise.all(
-        expenses.map(async (exp) => {
-          const splits = await expenseRepository.getExpenseSplits(exp.id);
-          allSplits.push(...splits);
-        })
-      );
+
+      for (const [expId, splits] of Object.entries(splitsMap)) {
+        for (const s of splits) {
+          allSplits.push({
+            id: s.id,
+            expenseId: expId,
+            userId: s.user_id,
+            shareMinor: s.share_minor,
+            weight: s.weight || undefined,
+            percentageBasisPoints: s.percentage_basis_points || undefined,
+            createdAt: s.created_at,
+          });
+        }
+      }
+
       return calculateGroupBalances(expenses, allSplits, settlements, group.currency || 'USD');
     },
     enabled: !!group,
   });
 
   const isLoading =
-    isLoadingGroup || isLoadingMembers || isLoadingExpenses || isLoadingSettlements || isLoadingBalances;
+    isLoadingGroup || isLoadingExpenses || isLoadingSettlements || isLoadingBalances;
 
   return {
     group,
@@ -283,11 +258,10 @@ export function useGroup(groupId: string) {
     settlements,
     balances,
     isLoading,
-    error: groupError,
+    error: groupError as Error | null,
     refetch: () => {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: ['group', groupId] }),
-        queryClient.invalidateQueries({ queryKey: ['group-members', groupId] }),
         queryClient.invalidateQueries({ queryKey: ['expenses', { groupId }] }),
         queryClient.invalidateQueries({ queryKey: ['settlements', { groupId }] }),
         queryClient.invalidateQueries({ queryKey: ['group-balances', groupId] }),
@@ -303,21 +277,45 @@ export function useGroupBalances(groupId: string) {
   }>({
     queryKey: ['group-balances', groupId],
     queryFn: async () => {
-      const [group, expenses, settlements] = await Promise.all([
-        groupRepository.getGroupById(groupId),
-        expenseRepository.getExpensesByGroup(groupId),
-        settlementRepository.getSettlementsByGroup(groupId),
+      const [groupDetails, expenses, rawSettlements] = await Promise.all([
+        groupService.getGroupById(groupId),
+        expenseService.getExpenses({ groupId }),
+        settlementService.getSettlements(groupId),
       ]);
 
-      const currency = group?.currency || 'USD';
-
+      const currency = groupDetails?.default_currency || 'USD';
+      const expenseIds = expenses.map((e) => e.id);
+      const splitsMap = await expenseService.getSplitsForExpenses(expenseIds);
       const allSplits: ExpenseSplit[] = [];
-      await Promise.all(
-        expenses.map(async (exp) => {
-          const splits = await expenseRepository.getExpenseSplits(exp.id);
-          allSplits.push(...splits);
-        })
-      );
+
+      for (const [expId, splits] of Object.entries(splitsMap)) {
+        for (const s of splits) {
+          allSplits.push({
+            id: s.id,
+            expenseId: expId,
+            userId: s.user_id,
+            shareMinor: s.share_minor,
+            weight: s.weight || undefined,
+            percentageBasisPoints: s.percentage_basis_points || undefined,
+            createdAt: s.created_at,
+          });
+        }
+      }
+
+      const settlements: Settlement[] = rawSettlements.map((s) => ({
+        id: s.id,
+        sourceId: s.group_id,
+        groupId: s.group_id,
+        fromUserId: s.from_user_id,
+        toUserId: s.to_user_id,
+        amountMinor: s.amount_minor,
+        currency: s.currency,
+        settlementDate: s.settlement_date,
+        notes: s.notes || undefined,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+        createdBy: s.created_by,
+      }));
 
       const computed = calculateGroupBalances(expenses, allSplits, settlements, currency);
       return {

@@ -1,13 +1,7 @@
-import { useCallback } from 'react';
-import { isDeletingAccount } from '@/services/account/deletion-state';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { User, SyncOperation } from '@/domain/models/types';
-import { db } from '@/storage/local/database';
-import { userRepository } from '@/storage/repositories/user-repository';
-import { syncRepository } from '@/storage/repositories/sync-repository';
-import { generateId, generateOperationId } from '@/lib/id';
+import type { User } from '@/domain/models/types';
 import { useAuth } from './use-auth';
-import { notifySyncQueueUpdated } from './use-sync';
+import { profileService, type DbProfile } from '@/services/supabase/profile-service';
 
 export interface UpdateProfileInput {
   name?: string;
@@ -23,239 +17,141 @@ export interface UseCurrentUserResult {
   isUpdating: boolean;
 }
 
+function mapProfileToUser(profile: DbProfile | null, authUser: any): User | null {
+  if (!profile && !authUser) return null;
+
+  const id = profile?.id || authUser?.id || '';
+  const name = profile?.display_name || authUser?.name || authUser?.displayName || 'User';
+  const email = profile?.email || authUser?.email || '';
+  const picture = profile?.avatar_url || authUser?.picture || authUser?.avatarUrl || undefined;
+
+  return {
+    id,
+    name,
+    displayName: name,
+    email,
+    picture,
+    avatarUrl: picture,
+    isCurrentUser: true,
+    createdAt: profile?.created_at || new Date().toISOString(),
+    updatedAt: profile?.updated_at || new Date().toISOString(),
+  };
+}
+
 export function useCurrentUser(): UseCurrentUserResult {
   const queryClient = useQueryClient();
-  const queryKey = ['current-user'];
-
-  const { user: googleUser } = useAuth();
+  const { user: authUser, isAuthenticated } = useAuth();
 
   const {
-    data: localUser,
+    data: user = null,
     isLoading,
     error,
   } = useQuery<User | null, Error>({
-    queryKey: ['current-user', googleUser?.sub],
+    queryKey: ['current-user', authUser?.id],
     queryFn: async () => {
-      if (isDeletingAccount()) return null;
-      // Clean up any legacy placeholder alias rows
-      await userRepository.cleanLegacyAliases();
-
-      let existing = await userRepository.getCurrentUser();
-
-      // If we have an authenticated Google user but no local record or googleSub mismatch,
-      // create or sync the local current user record
-      if (googleUser) {
-        if (!existing || existing.googleSub !== googleUser.sub || existing.id !== `google_${googleUser.sub}`) {
-          const now = new Date().toISOString();
-          const syncedUser: User = {
-            id: `google_${googleUser.sub}`,
-            name: googleUser.name || 'Anonymous User',
-            email: googleUser.email,
-            googleSub: googleUser.sub,
-            picture: googleUser.picture,
-            isCurrentUser: true,
-            createdAt: existing?.createdAt || now,
-            updatedAt: now,
-          };
-          const sameAccount = !existing?.googleSub || existing.googleSub === googleUser.sub;
-          await userRepository.adoptGoogleIdentity(syncedUser, sameAccount ? existing?.id : undefined);
-          void queryClient.invalidateQueries({ queryKey: ['users'] });
-          void queryClient.invalidateQueries({ queryKey: ['groups'] });
-          return syncedUser;
-        }
-      }
-
-      if (!existing) {
-        const now = new Date().toISOString();
-        const initialUser: User = {
-          id: generateId(),
-          name: googleUser?.name || 'You',
-          email: googleUser?.email || '',
-          googleSub: googleUser?.sub,
-          picture: googleUser?.picture,
-          isCurrentUser: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await userRepository.setCurrentUser(initialUser);
-        void queryClient.invalidateQueries({ queryKey: ['users'] });
-        return initialUser;
-      }
-
-      return existing;
+      if (!isAuthenticated || !authUser?.id) return null;
+      const profile = await profileService.getCurrentProfile();
+      return mapProfileToUser(profile, authUser);
     },
+    enabled: !!authUser?.id,
   });
 
   const updateProfileMutation = useMutation({
     mutationFn: async (updates: UpdateProfileInput): Promise<User> => {
-      let current = await userRepository.getCurrentUser();
-      const now = new Date().toISOString();
-
-      if (!current) {
-        current = {
-          id: generateId(),
-          name: updates.name || googleUser?.name || 'User',
-          email: updates.email || googleUser?.email || '',
-          googleSub: googleUser?.sub,
-          picture: updates.picture || googleUser?.picture,
-          isCurrentUser: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-      } else {
-        current = {
-          ...current,
-          ...(updates.name !== undefined ? { name: updates.name } : {}),
-          ...(updates.email !== undefined ? { email: updates.email } : {}),
-          ...(updates.picture !== undefined ? { picture: updates.picture } : {}),
-          updatedAt: now,
-        };
-      }
-
-      await userRepository.setCurrentUser(current);
-
-      // Retroactively update any legacy records stored with 'user_self' or 'current_user'
-      try {
-        await userRepository.cleanLegacyAliases();
-        const legacyExpenses = await db.expenses
-          .filter((exp) => exp.paidBy === 'user_self' || exp.paidBy === 'current_user')
-          .toArray();
-        for (const exp of legacyExpenses) {
-          await db.expenses.update(exp.id, { paidBy: current.id });
-        }
-        const legacySplits = await db.expenseSplits
-          .filter((s) => s.userId === 'user_self' || s.userId === 'current_user')
-          .toArray();
-        for (const split of legacySplits) {
-          await db.expenseSplits.update(split.id, { userId: current.id });
-        }
-      } catch {
-        // Non-fatal if index not yet initialized
-      }
-
-      const operationId = generateOperationId();
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'user',
-        entityId: current.id,
-        sourceId: current.id,
-        operationType: 'update',
-        payload: JSON.stringify(current),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return current;
-    },
-    onSuccess: (updatedUser) => {
-      queryClient.setQueryData(queryKey, updatedUser);
+      const updatedProfile = await profileService.updateCurrentProfile({
+        displayName: updates.name,
+        avatarUrl: updates.picture,
+      });
+      const updated = mapProfileToUser(updatedProfile, authUser)!;
+      void queryClient.invalidateQueries({ queryKey: ['current-user'] });
       void queryClient.invalidateQueries({ queryKey: ['users'] });
+      return updated;
     },
   });
 
   return {
-    user: localUser ?? null,
+    user: user || (authUser ? mapProfileToUser(null, authUser) : null),
     isLoading,
-    error,
+    error: error as Error | null,
     updateProfile: (updates: UpdateProfileInput) => updateProfileMutation.mutateAsync(updates),
     isUpdating: updateProfileMutation.isPending,
   };
 }
 
-export interface AddFriendInput {
-  email: string;
-  name?: string;
-}
-
 export interface UseUsersResult {
   users: User[];
-  getUserById: (id: string) => User | undefined;
-  addFriend: (input: AddFriendInput) => Promise<User>;
-  removeFriend: (id: string) => Promise<void>;
-  isAddingFriend: boolean;
   isLoading: boolean;
   error: Error | null;
+  getUserById: (id: string) => User | undefined;
   refetch: () => Promise<unknown>;
 }
 
-export function useUsers(): UseUsersResult {
-  const queryClient = useQueryClient();
-  const queryKey = ['users'];
+export function useUsers(userIds?: string[]): UseUsersResult {
+  const { user: currentUser } = useCurrentUser();
 
   const {
-    data: users = [],
+    data: usersMap = {},
     isLoading,
     error,
     refetch,
-  } = useQuery<User[], Error>({
-    queryKey,
-    queryFn: () => userRepository.getAllUsers(),
+  } = useQuery<Record<string, DbProfile>, Error>({
+    queryKey: ['users', (userIds || []).sort().join(',')],
+    queryFn: async () => {
+      if (!userIds || userIds.length === 0) return {};
+      return await profileService.getProfiles(userIds);
+    },
+    enabled: !!userIds && userIds.length > 0,
   });
 
-  const getUserById = useCallback(
-    (id: string): User | undefined => {
-      return users.find((u) => u.id === id);
-    },
-    [users]
-  );
+  const users: User[] = [];
+  if (currentUser) {
+    users.push(currentUser);
+  }
 
-  const addFriendMutation = useMutation({
-    mutationFn: async (input: AddFriendInput): Promise<User> => {
-      const email = input.email.trim().toLowerCase();
-      if (!email || !email.includes('@')) {
-        throw new Error('Please enter a valid email address.');
-      }
+  for (const [id, p] of Object.entries(usersMap)) {
+    if (!users.some((u) => u.id === id)) {
+      users.push({
+        id: p.id,
+        name: p.display_name,
+        displayName: p.display_name,
+        email: p.email || '',
+        avatarUrl: p.avatar_url || undefined,
+        picture: p.avatar_url || undefined,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      });
+    }
+  }
 
-      const currentUser = await userRepository.getCurrentUser();
-      if (currentUser?.email && currentUser.email.trim().toLowerCase() === email) {
-        throw new Error('You cannot add your own email as a friend.');
-      }
+  const getUserById = (id: string): User | undefined => {
+    if (currentUser && (currentUser.id === id || id === 'current_user' || id === 'user_self')) {
+      return currentUser;
+    }
+    const found = users.find((u) => u.id === id);
+    if (found) return found;
 
-      const existing = await userRepository.getUserByEmail(email);
-      if (existing) {
-        throw new Error(`A contact with the email "${email}" already exists.`);
-      }
-
-      const displayName = input.name?.trim() || email.split('@')[0];
-      const now = new Date().toISOString();
-      const newFriend: User = {
-        id: generateId(),
-        name: displayName,
-        email,
-        isCurrentUser: false,
-        createdAt: now,
-        updatedAt: now,
+    const fromMap = usersMap[id];
+    if (fromMap) {
+      return {
+        id: fromMap.id,
+        name: fromMap.display_name,
+        displayName: fromMap.display_name,
+        email: fromMap.email || '',
+        avatarUrl: fromMap.avatar_url || undefined,
+        picture: fromMap.avatar_url || undefined,
+        createdAt: fromMap.created_at,
+        updatedAt: fromMap.updated_at,
       };
+    }
 
-      await userRepository.upsertUser(newFriend);
-      return newFriend;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
-    },
-  });
-
-  const removeFriendMutation = useMutation({
-    mutationFn: async (friendId: string): Promise<void> => {
-      await userRepository.deleteUser(friendId);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
-    },
-  });
+    return undefined;
+  };
 
   return {
     users,
-    getUserById,
-    addFriend: (input: AddFriendInput) => addFriendMutation.mutateAsync(input),
-    removeFriend: (id: string) => removeFriendMutation.mutateAsync(id),
-    isAddingFriend: addFriendMutation.isPending,
     isLoading,
-    error,
+    error: error as Error | null,
+    getUserById,
     refetch,
   };
 }

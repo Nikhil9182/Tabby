@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { calculateGroupBalances, calculatePairwiseBalance } from '@/domain/balances/balance-engine';
-import { SAMPLE_TRIP_IMAGES } from '@/lib/seed-data';
+const SAMPLE_TRIP_IMAGES = {
+  goa: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
+};
 import type { User, Group, GroupMembership, Expense, ExpenseSplit, Settlement } from '@/domain/models/types';
 
 describe('Demo Seed Data Workflow & Balance Engine Verification', () => {

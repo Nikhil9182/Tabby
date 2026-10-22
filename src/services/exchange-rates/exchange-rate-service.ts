@@ -1,4 +1,4 @@
-import { db } from '../../storage/local/database';
+import { supabase, checkSupabaseConfig } from '../../lib/supabase';
 import type { ExchangeRateCache } from '../../domain/models/types';
 
 export const FRANKFURTER_BASE = 'https://api.frankfurter.dev/v2';
@@ -14,6 +14,11 @@ export interface CurrencyConversionResult {
 
 export class ExchangeRateService {
   private currenciesMemoryCache: Record<string, string> | null = null;
+  private inMemoryRates: Map<string, ExchangeRateCache> = new Map();
+
+  private getRateKey(base: string, quote: string, date?: string): string {
+    return `${base.toUpperCase()}_${quote.toUpperCase()}_${date || 'latest'}`;
+  }
 
   async getAvailableCurrencies(): Promise<Record<string, string>> {
     // 1. Try in-memory cache
@@ -117,7 +122,12 @@ export class ExchangeRateService {
         source: 'frankfurter',
       };
 
-      await db.exchangeRateCache.put(entry);
+      this.inMemoryRates.set(this.getRateKey(normBase, normQuote), entry);
+      this.inMemoryRates.set(this.getRateKey(normBase, normQuote, entry.rateDate), entry);
+
+      // Async write to Supabase cache if available
+      this.persistRateToSupabase(entry);
+
       return entry;
     } catch (networkError) {
       const cached = await this.getCachedRate(normBase, normQuote);
@@ -172,7 +182,9 @@ export class ExchangeRateService {
         source: 'frankfurter',
       };
 
-      await db.exchangeRateCache.put(entry);
+      this.inMemoryRates.set(this.getRateKey(normBase, normQuote, date), entry);
+      this.persistRateToSupabase(entry);
+
       return entry;
     } catch (networkError) {
       // Fallback to closest cached rate for this pair if exact date is missing
@@ -201,27 +213,69 @@ export class ExchangeRateService {
       };
     }
 
+    // 1. Check in-memory Map
     if (date) {
-      const exact = await db.exchangeRateCache.get([normBase, normQuote, date]);
-      if (exact) {
-        return exact;
+      const inMem = this.inMemoryRates.get(this.getRateKey(normBase, normQuote, date));
+      if (inMem) return inMem;
+    }
+    const latestInMem = this.inMemoryRates.get(this.getRateKey(normBase, normQuote));
+    if (latestInMem) return latestInMem;
+
+    // 2. Check Supabase currency_rates_cache if configured
+    if (checkSupabaseConfig().isConfigured) {
+      try {
+        let query = supabase
+          .from('currency_rates_cache')
+          .select('*')
+          .eq('base_currency', normBase)
+          .eq('quote_currency', normQuote);
+
+        if (date) {
+          query = query.eq('rate_date', date);
+        } else {
+          query = query.order('rate_date', { ascending: false }).limit(1);
+        }
+
+        const { data } = await query;
+        if (data && data.length > 0) {
+          const row = data[0];
+          const entry: ExchangeRateCache = {
+            baseCurrency: row.base_currency,
+            quoteCurrency: row.quote_currency,
+            rate: row.rate,
+            rateDate: row.rate_date,
+            fetchedAt: row.fetched_at,
+            source: row.source,
+          };
+          this.inMemoryRates.set(this.getRateKey(normBase, normQuote, date), entry);
+          return entry;
+        }
+      } catch {
+        // Fallback silently if offline or database error
       }
     }
 
-    // If no exact date or no date provided, find the most recently fetched/dated rate
-    const candidates = await db.exchangeRateCache
-      .where('baseCurrency')
-      .equals(normBase)
-      .filter((entry) => entry.quoteCurrency === normQuote)
-      .toArray();
+    return undefined;
+  }
 
-    if (candidates.length === 0) {
-      return undefined;
+  private async persistRateToSupabase(entry: ExchangeRateCache): Promise<void> {
+    if (!checkSupabaseConfig().isConfigured) return;
+
+    try {
+      await (supabase.from('currency_rates_cache') as any).upsert(
+        {
+          base_currency: entry.baseCurrency,
+          quote_currency: entry.quoteCurrency,
+          rate: entry.rate,
+          rate_date: entry.rateDate,
+          source: entry.source || 'frankfurter',
+          fetched_at: entry.fetchedAt,
+        },
+        { onConflict: 'base_currency,quote_currency,rate_date' }
+      );
+    } catch {
+      // Ignore background cache write failures
     }
-
-    // Sort by rateDate descending
-    candidates.sort((a, b) => b.rateDate.localeCompare(a.rateDate));
-    return candidates[0];
   }
 
   async convertAmount(

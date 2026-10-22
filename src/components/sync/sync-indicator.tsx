@@ -5,7 +5,6 @@ import {
   CloudOff,
   AlertCircle,
   CheckCircle2,
-  Clock,
   Database,
   ArrowUpRight,
 } from "lucide-react";
@@ -44,7 +43,7 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
   // Determine status color, badge, and label
   let dotColor = "bg-emerald-500";
   let textColor = "text-emerald-700 dark:text-emerald-400";
-  let statusLabel = "Synced";
+  let statusLabel = "Live";
   let Icon = CheckCircle2;
   let isSpinning = false;
 
@@ -56,28 +55,19 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
   } else if (syncStatus.isSyncing || isSyncing) {
     dotColor = "bg-blue-500";
     textColor = "text-blue-700 dark:text-blue-400";
-    statusLabel = "Syncing...";
+    statusLabel = "Refreshing...";
     Icon = RefreshCw;
     isSpinning = true;
-  } else if (syncStatus.authState === "error" || syncStatus.hasConflicts || syncError) {
+  } else if (syncStatus.authState === "error" || syncError) {
     dotColor = "bg-red-500";
     textColor = "text-red-700 dark:text-red-400";
-    statusLabel = syncStatus.hasConflicts
-      ? "Conflicts"
-      : syncStatus.authState === "error"
-      ? "Sync Error"
-      : "Needs Auth";
+    statusLabel = "Connection Error";
     Icon = AlertCircle;
-  } else if (syncStatus.authState === "expired") {
-    dotColor = "bg-red-500";
-    textColor = "text-red-700 dark:text-red-400";
-    statusLabel = "Needs Auth";
+  } else if (syncStatus.authState === "disconnected") {
+    dotColor = "bg-muted-foreground";
+    textColor = "text-muted-foreground";
+    statusLabel = "Signed Out";
     Icon = AlertCircle;
-  } else if (syncStatus.pendingCount > 0) {
-    dotColor = "bg-amber-400";
-    textColor = "text-amber-800 dark:text-amber-300";
-    statusLabel = `${syncStatus.pendingCount} pending`;
-    Icon = Clock;
   }
 
   // Format last synced timestamp
@@ -98,7 +88,7 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Sync Status: ${statusLabel}`}
+          aria-label={`Database Status: ${statusLabel}`}
           className={cn(
             "group inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/90 px-2.5 py-1 text-xs font-medium transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 cursor-pointer select-none",
             className
@@ -170,21 +160,21 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
               </div>
               <div>
                 <h4 className="text-sm font-semibold tracking-tight text-foreground">
-                  Sync Status
+                  Database Connection
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  {syncStatus.isOnline ? "Online (IndexedDB + Cloud)" : "Offline (Local only)"}
+                  {syncStatus.isOnline ? "Connected (Supabase Cloud)" : "Offline (Network disconnected)"}
                 </p>
               </div>
             </div>
 
             <Badge
               variant={
-                syncStatus.hasConflicts || syncStatus.authState === "error"
+                syncStatus.authState === "error"
                   ? "destructive"
-                  : syncStatus.pendingCount > 0
-                  ? "secondary"
-                  : "outline"
+                  : syncStatus.isOnline
+                  ? "outline"
+                  : "secondary"
               }
               className="text-[11px] capitalize"
             >
@@ -195,16 +185,16 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
           {/* Details Grid */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="p-2.5 rounded-xl bg-muted/40 border border-border/50">
-              <span className="text-muted-foreground block text-[11px]">Last sync</span>
+              <span className="text-muted-foreground block text-[11px]">Last checked</span>
               <span className="font-medium text-foreground truncate block mt-0.5">
                 {formattedLastSync}
               </span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-muted/40 border border-border/50">
-              <span className="text-muted-foreground block text-[11px]">Pending changes</span>
+              <span className="text-muted-foreground block text-[11px]">Realtime</span>
               <span className="font-medium text-foreground block mt-0.5">
-                {syncStatus.pendingCount}
+                {syncStatus.isOnline ? "Active" : "Paused"}
               </span>
             </div>
           </div>
@@ -214,9 +204,9 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-primary shrink-0" />
               <div className="truncate">
-                <span className="font-medium text-foreground block">Google Drive Backup</span>
+                <span className="font-medium text-foreground block">Supabase Auth</span>
                 <span className="text-muted-foreground text-[11px] block capitalize">
-                  {authState === "connected" ? "Connected" : "Not connected"}
+                  {authState === "connected" ? "Authenticated" : "Not connected"}
                 </span>
               </div>
             </div>
@@ -228,7 +218,7 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
                 className="h-7 text-xs px-2.5 gap-1 shrink-0"
                 onClick={() => void signIn()}
               >
-                Connect <ArrowUpRight className="h-3 w-3" />
+                Sign in <ArrowUpRight className="h-3 w-3" />
               </Button>
             )}
           </div>
@@ -251,7 +241,7 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
                 (isSyncing || syncStatus.isSyncing) && "animate-spin"
               )}
             />
-            {isSyncing || syncStatus.isSyncing ? "Syncing now..." : "Sync now"}
+            {isSyncing || syncStatus.isSyncing ? "Refreshing now..." : "Refresh server data"}
           </Button>
         </div>
       </PopoverContent>

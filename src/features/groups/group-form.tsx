@@ -27,7 +27,7 @@ import {
   useUsers,
   useCurrency,
 } from '@/hooks';
-import { userRepository } from '@/storage/repositories/user-repository';
+import { groupService } from '@/services/supabase/group-service';
 import { generateId } from '@/lib/id';
 import type { User, MemberRole } from '@/domain/models/types';
 
@@ -155,18 +155,6 @@ export function GroupForm({ groupId: propGroupId }: GroupFormProps) {
     const existing = users.find((u) => u.email.toLowerCase() === email);
     const userId = existing?.id || generateId();
 
-    if (!existing) {
-      const now = new Date().toISOString();
-      const newUser: User = {
-        id: userId,
-        name,
-        email,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await userRepository.upsertUser(newUser);
-    }
-
     setMembersList((prev) => [
       ...prev,
       {
@@ -201,18 +189,24 @@ export function GroupForm({ groupId: propGroupId }: GroupFormProps) {
         });
         navigate(`/groups/${updated.id}`);
       } else {
-        const membersPayload = membersList.map((m) => ({
-          userId: m.id,
-          role: m.role,
-        }));
-
         const created = await createGroup({
           name: data.name,
           description: data.description,
           currency: data.currency,
           createdBy: currentUserId,
-          members: membersPayload,
         });
+
+        // Send invitations for any invited member emails
+        for (const m of membersList) {
+          if (m.email && m.email.toLowerCase() !== currentUser?.email?.toLowerCase()) {
+            try {
+              const inviteRole = m.role === 'owner' ? 'admin' : (m.role || 'member');
+              await groupService.createInvitation(created.id, m.email, inviteRole);
+            } catch (invErr) {
+              console.warn('Could not auto-invite member:', m.email, invErr);
+            }
+          }
+        }
         navigate(`/groups/${created.id}`);
       }
     } catch (err: unknown) {

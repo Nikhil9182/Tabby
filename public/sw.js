@@ -42,15 +42,19 @@ function isForbiddenCache(request, url) {
   const hostname = url.hostname.toLowerCase();
   const pathname = url.pathname.toLowerCase();
 
-  // Explicitly block Google OAuth, Identity, Google Drive, Google Sheets, and Google APIs
+  // Explicitly block Supabase, Google OAuth, and all authenticated APIs
   if (
+    hostname.includes('supabase.co') ||
     hostname.includes('googleapis.com') ||
     hostname.includes('accounts.google.com') ||
     hostname.includes('googleusercontent.com') ||
     hostname.includes('gstatic.com') ||
     hostname.endsWith('.google.com') ||
     pathname.includes('oauth') ||
-    pathname.includes('token')
+    pathname.includes('token') ||
+    pathname.includes('/rest/v1') ||
+    pathname.includes('/auth/v1') ||
+    pathname.includes('/realtime/v1')
   ) {
     return true;
   }

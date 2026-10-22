@@ -7,59 +7,48 @@ import {
   type ReactNode,
 } from 'react';
 import type { AuthState, GoogleUser } from '@/domain/models/types';
-import { googleAuthService } from '@/services/auth/google-auth-service';
+import { supabase, checkSupabaseConfig } from '@/lib/supabase';
+import { supabaseAuthService } from '@/services/auth/supabase-auth-service';
+import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 export type { AuthState, GoogleUser };
 
 export interface AuthContextType {
   authState: AuthState;
-  user: GoogleUser | null;
+  user: (GoogleUser & { id: string; displayName?: string; avatarUrl?: string }) | null;
   accessToken: string | null;
   signIn: () => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   isAuthenticated: boolean;
+  isLoading: boolean;
   error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const GIS_SCRIPT_ID = 'google-identity-services-script';
-const GIS_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
+function mapSupabaseUserToAuthUser(
+  sbUser: SupabaseUser
+): GoogleUser & { id: string; displayName?: string; avatarUrl?: string } {
+  const name =
+    sbUser.user_metadata?.full_name ||
+    sbUser.user_metadata?.name ||
+    sbUser.email?.split('@')[0] ||
+    'User';
 
-function loadGsiScript(): Promise<void> {
-  if (typeof window === 'undefined') {
-    return Promise.resolve();
-  }
+  const picture =
+    sbUser.user_metadata?.avatar_url ||
+    sbUser.user_metadata?.picture ||
+    undefined;
 
-  // Already loaded
-  if (window.google?.accounts?.oauth2) {
-    return Promise.resolve();
-  }
-
-  const existing = document.getElementById(GIS_SCRIPT_ID) as HTMLScriptElement | null;
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      if (window.google?.accounts?.oauth2) {
-        resolve();
-        return;
-      }
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity Services')), {
-        once: true,
-      });
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.id = GIS_SCRIPT_ID;
-    script.src = GIS_SCRIPT_SRC;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
-    document.head.appendChild(script);
-  });
+  return {
+    id: sbUser.id,
+    sub: sbUser.id,
+    name,
+    displayName: name,
+    email: sbUser.email || '',
+    picture,
+    avatarUrl: picture,
+  };
 }
 
 export interface AuthProviderProps {
@@ -67,84 +56,105 @@ export interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [authState, setAuthState] = useState<AuthState>('disconnected');
-  const [user, setUser] = useState<GoogleUser | null>(null);
+  const [authState, setAuthState] = useState<AuthState>('connecting');
+  const [user, setUser] = useState<(GoogleUser & { id: string; displayName?: string; avatarUrl?: string }) | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || '';
+  const handleSession = useCallback(async (session: Session | null) => {
+    if (session?.user) {
+      const mapped = mapSupabaseUserToAuthUser(session.user);
+      setUser(mapped);
+      setAccessToken(session.access_token);
+      setAuthState('connected');
+      setError(null);
+      // Sync profile asynchronously in background
+      void supabaseAuthService.syncUserProfile(session.user);
+    } else {
+      setUser(null);
+      setAccessToken(null);
+      setAuthState('disconnected');
+    }
+    setIsLoading(false);
+  }, []);
 
-  // Initialize GIS and register auth state listener
   useEffect(() => {
     let isMounted = true;
+    const config = checkSupabaseConfig();
 
-    if (!clientId) {
+    if (!config.isConfigured) {
       setAuthState('disconnected');
+      setIsLoading(false);
       return;
     }
 
-    loadGsiScript()
-      .then(() => {
-        if (!isMounted) return;
-        googleAuthService.initialize(clientId);
-      })
-      .catch((err: unknown) => {
-        if (!isMounted) return;
-        const msg = err instanceof Error ? err.message : 'Failed to load Google Identity Services script';
-        setError(msg);
-        setAuthState('error');
-      });
-
-    const unsubscribe = googleAuthService.onAuthStateChange((state, newUser) => {
+    // 1. Initial session restoration
+    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
       if (!isMounted) return;
-      setAuthState(state);
-      setUser(newUser);
-      setAccessToken(googleAuthService.getAccessToken());
-      if (state !== 'error') {
-        setError(null);
+      if (sessionError) {
+        console.warn('[Tabby Auth] Session error:', sessionError.message);
+        setError(sessionError.message);
+        setAuthState('disconnected');
+        setIsLoading(false);
+      } else {
+        void handleSession(session);
       }
+    }).catch((err) => {
+      if (!isMounted) return;
+      console.warn('[Tabby Auth] Failed to restore session:', err);
+      setAuthState('disconnected');
+      setIsLoading(false);
     });
+
+    // 2. Subscribe to auth state changes (OAuth redirects, tokens, sign-out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!isMounted) return;
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setAccessToken(null);
+          setAuthState('disconnected');
+          setIsLoading(false);
+        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          await handleSession(session);
+        } else if (event === 'USER_UPDATED') {
+          if (session) await handleSession(session);
+        }
+      }
+    );
 
     return () => {
       isMounted = false;
-      unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [clientId]);
+  }, [handleSession]);
 
   const signIn = useCallback(async (): Promise<void> => {
-    if (!clientId) {
-      const msg = 'Google Client ID is not configured. Please set VITE_GOOGLE_CLIENT_ID in your environment.';
-      setError(msg);
-      setAuthState('disconnected');
-      throw new Error(msg);
-    }
-
     setError(null);
+    setAuthState('connecting');
 
-    try {
-      await loadGsiScript();
-      googleAuthService.initialize(clientId);
-      const googleUser = await googleAuthService.signIn();
-      setUser(googleUser);
-      setAccessToken(googleAuthService.getAccessToken());
-      setAuthState('connected');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Google sign-in failed';
-      setError(msg);
+    const result = await supabaseAuthService.signInWithGoogle();
+    if (result.error) {
+      setError(result.error.message);
       setAuthState('error');
-      throw err;
+      throw result.error;
     }
-  }, [clientId]);
-
-  const signOut = useCallback((): void => {
-    googleAuthService.signOut();
-    setUser(null);
-    setAccessToken(null);
-    setError(null);
-    setAuthState('disconnected');
   }, []);
 
-  const isAuthenticated = authState === 'connected' && !!accessToken;
+  const signOut = useCallback(async (): Promise<void> => {
+    try {
+      await supabaseAuthService.signOut();
+      setUser(null);
+      setAccessToken(null);
+      setError(null);
+      setAuthState('disconnected');
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+  }, []);
+
+  const isAuthenticated = authState === 'connected' && !!user;
 
   const value: AuthContextType = {
     authState,
@@ -153,6 +163,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     signIn,
     signOut,
     isAuthenticated,
+    isLoading,
     error,
   };
 

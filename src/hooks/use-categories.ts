@@ -1,22 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import type { Category, CategoryScope, SyncOperation } from '@/domain/models/types';
-import { db } from '@/storage/local/database';
-import { syncRepository } from '@/storage/repositories/sync-repository';
-import { generateId, generateOperationId } from '@/lib/id';
-import { notifySyncQueueUpdated } from './use-sync';
+import type { Category, CategoryScope } from '@/domain/models/types';
+import { categoryService } from '@/services/supabase/category-service';
 
-export const SYSTEM_CATEGORIES: Array<Omit<Category, 'createdAt' | 'updatedAt'>> = [
-  { id: 'cat_food', name: 'Food & Dining', icon: 'Utensils', color: '#f97316', scope: 'system' },
-  { id: 'cat_groceries', name: 'Groceries', icon: 'ShoppingCart', color: '#10b981', scope: 'system' },
-  { id: 'cat_transport', name: 'Transportation', icon: 'Car', color: '#3b82f6', scope: 'system' },
-  { id: 'cat_entertainment', name: 'Entertainment', icon: 'Film', color: '#8b5cf6', scope: 'system' },
-  { id: 'cat_housing', name: 'Housing & Rent', icon: 'Home', color: '#ec4899', scope: 'system' },
-  { id: 'cat_utilities', name: 'Utilities', icon: 'Zap', color: '#eab308', scope: 'system' },
-  { id: 'cat_travel', name: 'Travel', icon: 'Plane', color: '#06b6d4', scope: 'system' },
-  { id: 'cat_health', name: 'Health & Medical', icon: 'HeartPulse', color: '#ef4444', scope: 'system' },
-  { id: 'cat_shopping', name: 'Shopping', icon: 'ShoppingBag', color: '#6366f1', scope: 'system' },
-  { id: 'cat_other', name: 'General & Other', icon: 'MoreHorizontal', color: '#64748b', scope: 'system' },
+export const SYSTEM_CATEGORIES: Array<Category> = [
+  { id: 'cat_food', name: 'Food & Dining', icon: 'Utensils', color: '#f97316', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_groceries', name: 'Groceries', icon: 'ShoppingCart', color: '#10b981', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_transport', name: 'Transportation', icon: 'Car', color: '#3b82f6', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_entertainment', name: 'Entertainment', icon: 'Film', color: '#8b5cf6', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_housing', name: 'Housing & Rent', icon: 'Home', color: '#ec4899', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_utilities', name: 'Utilities', icon: 'Zap', color: '#eab308', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_travel', name: 'Travel', icon: 'Plane', color: '#06b6d4', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_health', name: 'Health & Medical', icon: 'HeartPulse', color: '#ef4444', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_shopping', name: 'Shopping', icon: 'ShoppingBag', color: '#6366f1', scope: 'system', createdAt: '', updatedAt: '' },
+  { id: 'cat_other', name: 'General & Other', icon: 'MoreHorizontal', color: '#64748b', scope: 'system', createdAt: '', updatedAt: '' },
 ];
 
 export interface CreateCategoryInput {
@@ -25,6 +22,7 @@ export interface CreateCategoryInput {
   color?: string;
   scope?: CategoryScope;
   ownerId?: string;
+  groupId?: string;
 }
 
 export interface UpdateCategoryInput {
@@ -40,6 +38,7 @@ export const createCategorySchema = z.object({
   color: z.string().optional(),
   scope: z.enum(['personal', 'group', 'system']).default('personal'),
   ownerId: z.string().optional(),
+  groupId: z.string().optional(),
 });
 
 export interface UseCategoriesResult {
@@ -55,82 +54,56 @@ export interface UseCategoriesResult {
   isDeleting: boolean;
 }
 
-export function useCategories(scope?: CategoryScope): UseCategoriesResult {
+export function useCategories(scope?: CategoryScope, groupId?: string): UseCategoriesResult {
   const queryClient = useQueryClient();
-  const queryKey = ['categories', scope];
+  const queryKey = ['categories', scope, groupId];
 
   const {
-    data: categories = [],
+    data: categories = SYSTEM_CATEGORIES,
     isLoading,
     error,
     refetch,
   } = useQuery<Category[], Error>({
     queryKey,
     queryFn: async () => {
-      // Initialize system categories if table is empty
-      const count = await db.categories.count();
-      if (count === 0) {
-        const now = new Date().toISOString();
-        const initialCategories: Category[] = SYSTEM_CATEGORIES.map((cat) => ({
-          ...cat,
-          createdAt: now,
-          updatedAt: now,
-        }));
-        await db.categories.bulkPut(initialCategories);
+      const dbCategories = await categoryService.getCategories(groupId);
+      if (dbCategories.length === 0) {
+        return SYSTEM_CATEGORIES;
       }
-
-      let all: Category[];
-      if (scope) {
-        all = await db.categories.where('scope').equals(scope).toArray();
-      } else {
-        all = await db.categories.toArray();
-      }
-
-      return all.sort((a, b) => {
-        // System categories first, then alphabetical
-        if (a.scope === 'system' && b.scope !== 'system') return -1;
-        if (a.scope !== 'system' && b.scope === 'system') return 1;
-        return a.name.localeCompare(b.name);
-      });
+      return dbCategories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        icon: c.icon,
+        color: c.color,
+        scope: c.is_system ? 'system' : c.group_id ? 'group' : 'personal',
+        ownerId: c.owner_id || undefined,
+        groupId: c.group_id || undefined,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      }));
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (input: CreateCategoryInput): Promise<Category> => {
       createCategorySchema.parse(input);
-
-      const now = new Date().toISOString();
-      const id = generateId();
-      const category: Category = {
-        id,
-        name: input.name.trim(),
-        icon: input.icon || 'Tag',
-        color: input.color || '#64748b',
+      const created = await categoryService.createCategory({
+        name: input.name,
+        icon: input.icon,
+        color: input.color,
+        groupId: input.groupId,
+      });
+      return {
+        id: created.id,
+        name: created.name,
+        icon: created.icon,
+        color: created.color,
         scope: input.scope || 'personal',
-        ownerId: input.ownerId,
-        createdAt: now,
-        updatedAt: now,
+        ownerId: created.owner_id || undefined,
+        groupId: created.group_id || undefined,
+        createdAt: created.created_at,
+        updatedAt: created.updated_at,
       };
-
-      await db.categories.put(category);
-
-      const operationId = generateOperationId();
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'category',
-        entityId: id,
-        sourceId: input.ownerId || 'system',
-        operationType: 'create',
-        payload: JSON.stringify(category),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return category;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['categories'] });
@@ -138,76 +111,14 @@ export function useCategories(scope?: CategoryScope): UseCategoriesResult {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (input: UpdateCategoryInput): Promise<Category> => {
-      const existing = await db.categories.get(input.id);
-      if (!existing) {
-        throw new Error(`Category with id ${input.id} not found`);
-      }
-
-      const now = new Date().toISOString();
-      const updated: Category = {
-        ...existing,
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.icon !== undefined ? { icon: input.icon } : {}),
-        ...(input.color !== undefined ? { color: input.color } : {}),
-        updatedAt: now,
-      };
-
-      await db.categories.put(updated);
-
-      const operationId = generateOperationId();
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'category',
-        entityId: input.id,
-        sourceId: existing.ownerId || 'system',
-        operationType: 'update',
-        payload: JSON.stringify(updated),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return updated;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['categories'] });
+    mutationFn: async (_input: UpdateCategoryInput): Promise<Category> => {
+      throw new Error('Category update not implemented');
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string): Promise<void> => {
-      const existing = await db.categories.get(id);
-      if (existing?.scope === 'system') {
-        throw new Error('Cannot delete system default categories');
-      }
-
-      await db.categories.delete(id);
-
-      if (existing) {
-        const now = new Date().toISOString();
-        const operationId = generateOperationId();
-        const syncOp: SyncOperation = {
-          id: generateId(),
-          operationId,
-          entityType: 'category',
-          entityId: id,
-          sourceId: existing.ownerId || 'system',
-          operationType: 'delete',
-          payload: JSON.stringify({ id, deletedAt: now }),
-          createdAt: now,
-          attemptCount: 0,
-          status: 'pending',
-        };
-        await syncRepository.addOperation(syncOp);
-        notifySyncQueueUpdated();
-      }
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['categories'] });
+    mutationFn: async (_id: string): Promise<void> => {
+      throw new Error('Category deletion not implemented');
     },
   });
 

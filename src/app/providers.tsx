@@ -1,5 +1,4 @@
-import { useEffect, type ReactNode } from "react";
-import { DELETION_STATE_KEY } from '@/services/account/deletion-state';
+import { type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/hooks/use-auth";
 import { SyncProvider } from "@/hooks/use-sync";
@@ -26,13 +25,6 @@ export function Providers({
   children,
   queryClient = defaultQueryClient,
 }: ProvidersProps) {
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === DELETION_STATE_KEY && event.newValue === 'erased') window.location.replace(`${import.meta.env.BASE_URL}welcome`);
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
   return (
     <ThemeProvider defaultTheme="system" storageKey="tabby_theme">
       <QueryClientProvider client={queryClient}>

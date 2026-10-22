@@ -268,7 +268,7 @@ export function Navbar() {
                 {/* Notifications List */}
                 <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
                   {pendingIncoming.map(invite => <button key={invite.id} className="block w-full p-4 text-left hover:bg-muted/40" onClick={() => navigate('/friends')}>
-                    <span className="block text-sm font-bold">{invite.sender.name || invite.sender.email} sent a {invite.kind === 'friend' ? 'friend request' : 'group invitation'}</span>
+                    <span className="block text-sm font-bold">{invite.inviterName || invite.invitedEmail} sent an invitation for {invite.groupName}</span>
                     <span className="text-xs text-muted-foreground">Review and accept or decline in Friends</span>
                   </button>)}
                   {hasNotifications ? (

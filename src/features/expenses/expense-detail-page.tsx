@@ -252,7 +252,7 @@ export function ExpenseDetailPage() {
             </h3>
 
             <div className="rounded-xl border border-border/60 overflow-hidden divide-y divide-border/40">
-              {splits.map((split) => {
+              {splits.map((split: any) => {
                 const isYou =
                   split.userId === currentUserId ||
                   split.userId === 'user_self' ||

@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useCollaboration } from '@/hooks/use-collaboration';
-import { useGroup } from '@/hooks/use-groups';
+import { useGroup, useGroups } from '@/hooks/use-groups';
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeftRight, Check, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
@@ -16,16 +15,16 @@ import { useAuth } from "@/hooks/use-auth";
 export function SettlementNewPage() {
   const navigate = useNavigate();
   const { recordSettlement, isRecording } = useSettlements();
+  const { groups } = useGroups();
   const { users } = useUsers();
   const { user: currentUser } = useCurrentUser();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const groupId = searchParams.get('groupId') || undefined;
   const { members } = useGroup(groupId || '');
-  const { friends } = useCollaboration();
   const eligibleUsers = groupId
     ? users.filter(u => members.some(m => m.userId === u.id && (!m.status || m.status === 'active')))
-    : users.filter(u => u.isCurrentUser || friends.some(f => f.person.id === u.id));
+    : users;
 
   const currentId = currentUser?.id || user?.sub || "user_self";
   const paramToUser = searchParams.get("toUserId");
@@ -62,9 +61,8 @@ export function SettlementNewPage() {
     const amountMinor = Math.round(amountFloat * 100);
 
     try {
-      const otherId = payerId === currentId ? toUser : payerId;
-      const ledgerId = groupId || friends.find(f => f.person.id === otherId)?.invitation.sourceId;
-      if (!ledgerId) throw new Error('Select an accepted friend or an active group to settle up.');
+      const ledgerId = groupId || groups[0]?.id;
+      if (!ledgerId) throw new Error('Select or create an active group to settle up.');
       await recordSettlement({
         groupId: ledgerId,
         fromUserId: payerId,

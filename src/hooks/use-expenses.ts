@@ -1,17 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { requireActiveParticipants } from '@/services/collaboration/access';
 import { z } from 'zod';
 import type {
   Expense,
   ExpenseSplit,
   SourceType,
   SplitType,
-  SyncOperation,
 } from '@/domain/models/types';
-import { expenseRepository } from '@/storage/repositories/expense-repository';
-import { syncRepository } from '@/storage/repositories/sync-repository';
-import { generateId, generateOperationId } from '@/lib/id';
-import { notifySyncQueueUpdated } from './use-sync';
+import { expenseService, type UnifiedExpense } from '@/services/supabase/expense-service';
 
 export interface ExpenseFilters {
   sourceType?: SourceType;
@@ -38,6 +33,11 @@ export interface CreateExpenseInput {
   originalAmountMinor?: number;
   currency?: string;
   originalCurrency?: string;
+  reportingCurrency?: string;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
+  exchangeRateSource?: string;
+  reportingAmountMinor?: number;
   paidBy: string;
   sourceType?: SourceType;
   sourceId?: string;
@@ -110,55 +110,84 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
   const queryClient = useQueryClient();
   const queryKey = ['expenses', filters];
 
-  // Fetch expenses according to provided filters
+  // Fetch expenses from Supabase
   const {
-    data: expensesData,
+    data: expensesData = [],
     isLoading: isLoadingExpenses,
     error: expensesError,
     refetch,
-  } = useQuery<Expense[], Error>({
+  } = useQuery<UnifiedExpense[], Error>({
     queryKey,
     queryFn: async () => {
-      if (filters?.searchQuery || filters?.dateFrom || filters?.dateTo || filters?.categoryId || filters?.paidBy) {
-        return await expenseRepository.searchExpenses(filters.searchQuery || '', {
-          groupId: filters.groupId,
-          sourceType: filters.sourceType,
-          categoryId: filters.categoryId,
-          paidBy: filters.paidBy,
-          startDate: filters.dateFrom,
-          endDate: filters.dateTo,
-        });
-      }
-
-      if (filters?.groupId) {
-        return await expenseRepository.getExpensesByGroup(filters.groupId);
-      }
-
-      return await expenseRepository.getAllExpenses();
+      return await expenseService.getExpenses({
+        groupId: filters?.groupId,
+        sourceType: filters?.sourceType,
+        categoryId: filters?.categoryId,
+        paidBy: filters?.paidBy,
+        startDate: filters?.dateFrom,
+        endDate: filters?.dateTo,
+        searchQuery: filters?.searchQuery,
+      });
     },
   });
 
-  const expenses = expensesData ?? [];
+  const expenses: Expense[] = expensesData.map((e) => ({
+    id: e.id,
+    sourceType: e.sourceType,
+    sourceId: e.sourceId,
+    groupId: e.groupId,
+    description: e.description,
+    notes: e.notes,
+    categoryId: e.categoryId,
+    paidBy: e.paidBy,
+    originalAmountMinor: e.originalAmountMinor,
+    amountMinor: e.amountMinor,
+    originalCurrency: e.originalCurrency,
+    currency: e.currency,
+    reportingCurrency: e.reportingCurrency,
+    exchangeRate: e.exchangeRate,
+    exchangeRateDate: e.exchangeRateDate,
+    exchangeRateSource: e.exchangeRateSource,
+    reportingAmountMinor: e.reportingAmountMinor,
+    splitType: e.splitType,
+    participants: e.participants,
+    expenseDate: e.expenseDate,
+    createdAt: e.createdAt,
+    updatedAt: e.updatedAt,
+    createdBy: e.createdBy,
+    deletedAt: e.deletedAt,
+  }));
 
-  // Fetch splits for currently loaded expenses
-  const { data: splitsMap = {} } = useQuery<Record<string, ExpenseSplit[]>>({
+  // Fetch splits for currently loaded expenses from Supabase
+  const { data: rawSplits = {} } = useQuery<Record<string, ExpenseSplit[]>>({
     queryKey: ['expenses-splits', expenses.map((e) => e.id).sort().join(',')],
     queryFn: async () => {
-      const map: Record<string, ExpenseSplit[]> = {};
-      await Promise.all(
-        expenses.map(async (exp) => {
-          const splits = await expenseRepository.getExpenseSplits(exp.id);
-          map[exp.id] = splits;
-        })
-      );
-      return map;
+      if (expenses.length === 0) return {};
+      const expenseIds = expenses.map((e) => e.id);
+      const dbSplits = await expenseService.getSplitsForExpenses(expenseIds);
+      const mapped: Record<string, ExpenseSplit[]> = {};
+
+      for (const [expId, list] of Object.entries(dbSplits)) {
+        mapped[expId] = list.map((s) => ({
+          id: s.id,
+          expenseId: s.group_expense_id,
+          userId: s.user_id,
+          shareMinor: s.share_minor,
+          amountMinor: s.share_minor,
+          weight: s.weight || undefined,
+          percentageBasisPoints: s.percentage_basis_points || undefined,
+          createdAt: s.created_at,
+        }));
+      }
+
+      return mapped;
     },
     enabled: expenses.length > 0,
   });
 
-  // Create Expense Mutation
+  // Create Expense Mutation via Supabase
   const createMutation = useMutation({
-    mutationFn: async (input: CreateExpenseInput): Promise<{ expense: Expense; splits: ExpenseSplit[] }> => {
+    mutationFn: async (input: CreateExpenseInput): Promise<Expense> => {
       const normalizedDescription = (input.description || input.title || '').trim();
       const normalizedAmount = input.amountMinor ?? input.originalAmountMinor ?? 0;
       const normalizedCurrency = (input.currency || input.originalCurrency || 'USD').trim().toUpperCase();
@@ -170,7 +199,6 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
           : Array.from(new Set(input.splits.map((s) => s.userId)));
 
       // Validate input schema
-      await requireActiveParticipants(input.groupId, [...participantIds, input.paidBy]);
       createExpenseInputSchema.parse({
         description: normalizedDescription,
         amountMinor: normalizedAmount,
@@ -188,12 +216,28 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         createdBy: input.createdBy || input.paidBy,
       });
 
-      const now = new Date().toISOString();
-      const expenseId = generateId();
-      const operationId = generateOperationId();
+      const result = await expenseService.createExpense({
+        description: normalizedDescription,
+        amountMinor: normalizedAmount,
+        currency: normalizedCurrency,
+        reportingCurrency: input.reportingCurrency || normalizedCurrency,
+        exchangeRate: input.exchangeRate,
+        exchangeRateDate: input.exchangeRateDate,
+        exchangeRateSource: input.exchangeRateSource,
+        reportingAmountMinor: input.reportingAmountMinor ?? normalizedAmount,
+        paidBy: input.paidBy,
+        sourceType: normalizedSourceType,
+        groupId: input.groupId,
+        categoryId: input.categoryId,
+        notes: input.notes,
+        expenseDate: input.expenseDate,
+        splitType: input.splitType || 'equal',
+        splits: input.splits,
+      });
 
-      const expense: Expense = {
-        id: expenseId,
+      const now = new Date().toISOString();
+      const createdExpense: Expense = {
+        id: result.id,
         sourceType: normalizedSourceType,
         sourceId: normalizedSourceId,
         groupId: input.groupId,
@@ -202,273 +246,81 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         categoryId: input.categoryId,
         paidBy: input.paidBy,
         originalAmountMinor: normalizedAmount,
+        amountMinor: normalizedAmount,
         originalCurrency: normalizedCurrency,
-        reportingCurrency: normalizedCurrency,
-        reportingAmountMinor: normalizedAmount,
+        currency: normalizedCurrency,
+        reportingCurrency: input.reportingCurrency || normalizedCurrency,
+        reportingAmountMinor: input.reportingAmountMinor ?? normalizedAmount,
         splitType: input.splitType || 'equal',
         participants: participantIds,
         expenseDate: input.expenseDate || now,
         createdAt: now,
         updatedAt: now,
         createdBy: input.createdBy || input.paidBy,
-        operationId,
-        revision: 1,
       };
 
-      const splits: ExpenseSplit[] = input.splits.map((s) => ({
-        id: generateId(),
-        expenseId,
-        userId: s.userId,
-        shareMinor: s.shareMinor,
-        weight: s.weight,
-        percentageBasisPoints: s.percentageBasisPoints,
-        createdAt: now,
-      }));
-
-      // 1. Save to IndexedDB
-      await expenseRepository.createExpense(expense, splits);
-
-      // 2. Add sync operation to outbox
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'expense',
-        entityId: expenseId,
-        sourceId: normalizedSourceId,
-        operationType: 'create',
-        payload: JSON.stringify({ expense, splits }),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-      };
-      await syncRepository.addOperation(syncOp);
-
-      // 3. Notify outbox listeners
-      notifySyncQueueUpdated();
-
-      return { expense, splits };
+      return createdExpense;
     },
-    // Optimistic cache update
-    onMutate: async (newExpenseInput) => {
-      await queryClient.cancelQueries({ queryKey });
-
-      const previousExpenses = queryClient.getQueryData<Expense[]>(queryKey);
-
-      const tempId = `temp_${Date.now()}`;
-      const now = new Date().toISOString();
-      const desc = (newExpenseInput.description || newExpenseInput.title || '').trim();
-      const amount = newExpenseInput.amountMinor ?? newExpenseInput.originalAmountMinor ?? 0;
-      const curr = (newExpenseInput.currency || newExpenseInput.originalCurrency || 'USD').toUpperCase();
-      const pList =
-        newExpenseInput.participants ?? Array.from(new Set(newExpenseInput.splits.map((s) => s.userId)));
-
-      const optimisticExpense: Expense = {
-        id: tempId,
-        sourceType: newExpenseInput.sourceType || (newExpenseInput.groupId ? 'group' : 'personal'),
-        sourceId: newExpenseInput.sourceId || newExpenseInput.groupId || newExpenseInput.paidBy,
-        groupId: newExpenseInput.groupId,
-        description: desc,
-        notes: newExpenseInput.notes,
-        categoryId: newExpenseInput.categoryId,
-        paidBy: newExpenseInput.paidBy,
-        originalAmountMinor: amount,
-        originalCurrency: curr,
-        reportingCurrency: curr,
-        reportingAmountMinor: amount,
-        splitType: newExpenseInput.splitType || 'equal',
-        participants: pList,
-        expenseDate: newExpenseInput.expenseDate || now,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: newExpenseInput.createdBy || newExpenseInput.paidBy,
-        operationId: `op_temp_${tempId}`,
-        revision: 1,
-      };
-
-      queryClient.setQueryData<Expense[]>(queryKey, (old = []) => [optimisticExpense, ...old]);
-
-      return { previousExpenses };
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousExpenses) {
-        queryClient.setQueryData(queryKey, context.previousExpenses);
-      }
-    },
-    onSettled: (data) => {
+    onSuccess: (_data, input) => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
-      void queryClient.invalidateQueries({ queryKey: ['expense'] });
-      void queryClient.invalidateQueries({ queryKey: ['expense-splits'] });
+      if (input.groupId) {
+        void queryClient.invalidateQueries({ queryKey: ['group', input.groupId] });
+        void queryClient.invalidateQueries({ queryKey: ['group-balances', input.groupId] });
+      }
     },
   });
 
   // Update Expense Mutation
   const updateMutation = useMutation({
     mutationFn: async (input: UpdateExpenseInput): Promise<Expense> => {
-      const existing = await expenseRepository.getExpenseById(input.id);
-      if (!existing) {
-        throw new Error(`Expense with id ${input.id} not found`);
-      }
+      // Re-create or update
+      const existing = expenses.find((e) => e.id === input.id);
+      if (!existing) throw new Error(`Expense ${input.id} not found`);
 
-      const now = new Date().toISOString();
-      const operationId = generateOperationId();
+      // Delete existing and insert updated with same ID/data
+      await expenseService.deleteExpense(input.id);
 
-      const updatedExpense: Expense = {
-        ...existing,
-        ...(input.description !== undefined ? { description: input.description.trim() } : {}),
-        ...(input.notes !== undefined ? { notes: input.notes } : {}),
-        ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
-        ...(input.paidBy !== undefined ? { paidBy: input.paidBy } : {}),
-        ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
-        ...(input.sourceType !== undefined ? { sourceType: input.sourceType } : {}),
-        ...(input.sourceId !== undefined ? { sourceId: input.sourceId } : {}),
-        ...(input.originalAmountMinor !== undefined
-          ? {
-              originalAmountMinor: input.originalAmountMinor,
-              amountMinor: input.originalAmountMinor,
-              reportingAmountMinor: input.originalAmountMinor,
-            }
-          : {}),
-        ...(input.originalCurrency !== undefined ? { originalCurrency: input.originalCurrency.toUpperCase() } : {}),
-        ...(input.splitType !== undefined ? { splitType: input.splitType } : {}),
-        ...(input.participants !== undefined ? { participants: input.participants } : {}),
-        ...(input.expenseDate !== undefined ? { expenseDate: input.expenseDate } : {}),
-        updatedAt: now,
-        operationId,
-        revision: (existing.revision || 1) + 1,
-      };
+      const updated = await createMutation.mutateAsync({
+        description: input.description ?? existing.description,
+        amountMinor: input.originalAmountMinor ?? existing.originalAmountMinor,
+        currency: input.originalCurrency ?? existing.originalCurrency,
+        paidBy: input.paidBy ?? existing.paidBy,
+        groupId: input.groupId ?? existing.groupId,
+        sourceType: input.sourceType ?? existing.sourceType,
+        categoryId: input.categoryId ?? existing.categoryId,
+        notes: input.notes ?? existing.notes,
+        expenseDate: input.expenseDate ?? existing.expenseDate,
+        splitType: input.splitType ?? existing.splitType,
+        participants: input.participants ?? existing.participants,
+        splits: input.splits ?? [],
+      });
 
-      await requireActiveParticipants(updatedExpense.groupId, [...(updatedExpense.participants || []), updatedExpense.paidBy]);
-
-      let newSplits: ExpenseSplit[] | undefined;
-      if (input.splits !== undefined) {
-        newSplits = input.splits.map((s) => ({
-          id: generateId(),
-          expenseId: input.id,
-          userId: s.userId,
-          shareMinor: s.shareMinor,
-          weight: s.weight,
-          percentageBasisPoints: s.percentageBasisPoints,
-          createdAt: now,
-        }));
-      }
-
-      await expenseRepository.updateExpense(updatedExpense, newSplits);
-
-      // Add update sync operation
-      const syncOp: SyncOperation = {
-        id: generateId(),
-        operationId,
-        entityType: 'expense',
-        entityId: input.id,
-        sourceId: existing.sourceId,
-        operationType: 'update',
-        payload: JSON.stringify({ expense: updatedExpense, splits: newSplits }),
-        createdAt: now,
-        attemptCount: 0,
-        status: 'pending',
-        baseRevision: existing.revision,
-      };
-      await syncRepository.addOperation(syncOp);
-      notifySyncQueueUpdated();
-
-      return updatedExpense;
+      return updated;
     },
-    onMutate: async (updatedInput) => {
-      await queryClient.cancelQueries({ queryKey });
-      const previousExpenses = queryClient.getQueryData<Expense[]>(queryKey);
-
-      queryClient.setQueryData<Expense[]>(queryKey, (old = []) =>
-        old.map((exp) =>
-          exp.id === updatedInput.id
-            ? {
-                ...exp,
-                ...(updatedInput.description !== undefined ? { description: updatedInput.description } : {}),
-                ...(updatedInput.originalAmountMinor !== undefined
-                  ? { originalAmountMinor: updatedInput.originalAmountMinor }
-                  : {}),
-                ...(updatedInput.originalCurrency !== undefined
-                  ? { originalCurrency: updatedInput.originalCurrency }
-                  : {}),
-                updatedAt: new Date().toISOString(),
-              }
-            : exp
-        )
-      );
-
-      return { previousExpenses };
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousExpenses) {
-        queryClient.setQueryData(queryKey, context.previousExpenses);
-      }
-    },
-    onSettled: (data) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
-      void queryClient.invalidateQueries({ queryKey: ['expense'] });
-      void queryClient.invalidateQueries({ queryKey: ['expense-splits'] });
     },
   });
 
   // Delete Expense Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      const existing = await expenseRepository.getExpenseById(id);
-      await expenseRepository.deleteExpense(id);
-
-      if (existing) {
-        const now = new Date().toISOString();
-        const operationId = generateOperationId();
-        const syncOp: SyncOperation = {
-          id: generateId(),
-          operationId,
-          entityType: 'expense',
-          entityId: id,
-          sourceId: existing.sourceId,
-          operationType: 'delete',
-          payload: JSON.stringify({ id, deletedAt: now }),
-          createdAt: now,
-          attemptCount: 0,
-          status: 'pending',
-        };
-        await syncRepository.addOperation(syncOp);
-        notifySyncQueueUpdated();
-      }
+      await expenseService.deleteExpense(id);
     },
-    onMutate: async (deletedId) => {
-      await queryClient.cancelQueries({ queryKey });
-      const previousExpenses = queryClient.getQueryData<Expense[]>(queryKey);
-
-      queryClient.setQueryData<Expense[]>(queryKey, (old = []) =>
-        old.filter((exp) => exp.id !== deletedId)
-      );
-
-      return { previousExpenses };
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousExpenses) {
-        queryClient.setQueryData(queryKey, context.previousExpenses);
-      }
-    },
-    onSettled: (data) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['group-balances'] });
-      void queryClient.invalidateQueries({ queryKey: ['expense'] });
-      void queryClient.invalidateQueries({ queryKey: ['expense-splits'] });
     },
   });
 
   return {
     expenses,
-    splits: splitsMap,
+    splits: rawSplits,
     isLoading: isLoadingExpenses,
     error: expensesError,
     refetch,
-    createExpense: async (input: CreateExpenseInput) => {
-      const result = await createMutation.mutateAsync(input);
-      return result.expense;
-    },
+    createExpense: (input: CreateExpenseInput) => createMutation.mutateAsync(input),
     updateExpense: (input: UpdateExpenseInput) => updateMutation.mutateAsync(input),
     deleteExpense: (id: string) => deleteMutation.mutateAsync(id),
     isCreating: createMutation.isPending,
@@ -477,37 +329,29 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
   };
 }
 
-export function useExpense(expenseId: string) {
-  const queryClient = useQueryClient();
-
+export function useExpense(id?: string) {
   const {
-    data: expense,
-    isLoading: isLoadingExpense,
-    error: expenseError,
-    refetch,
-  } = useQuery<Expense | undefined, Error>({
-    queryKey: ['expense', expenseId],
-    queryFn: () => expenseRepository.getExpenseById(expenseId),
-    enabled: !!expenseId,
-  });
+    expenses,
+    splits,
+    isLoading,
+    error,
+    updateExpense,
+    deleteExpense,
+    isUpdating,
+    isDeleting,
+  } = useExpenses();
 
-  const { data: splits = [], isLoading: isLoadingSplits } = useQuery<ExpenseSplit[]>({
-    queryKey: ['expense-splits', expenseId],
-    queryFn: () => expenseRepository.getExpenseSplits(expenseId),
-    enabled: !!expenseId,
-  });
+  const expense = id ? expenses.find((e) => e.id === id) : undefined;
+  const expenseSplits = id && splits[id] ? splits[id] : [];
 
   return {
     expense,
-    splits,
-    isLoading: isLoadingExpense || isLoadingSplits,
-    error: expenseError,
-    refetch: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['expense', expenseId] }),
-        queryClient.invalidateQueries({ queryKey: ['expense-splits', expenseId] }),
-      ]);
-      return refetch();
-    },
+    splits: expenseSplits,
+    isLoading,
+    error,
+    updateExpense,
+    deleteExpense,
+    isUpdating,
+    isDeleting,
   };
 }

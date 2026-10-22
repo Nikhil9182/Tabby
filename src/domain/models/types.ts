@@ -408,6 +408,7 @@ export interface Category {
   color?: string;
   scope: CategoryScope;
   ownerId?: string;
+  groupId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

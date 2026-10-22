@@ -2,9 +2,11 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageSkeleton } from "@/components/layout/loading-skeleton";
+import { ProtectedRoute } from "@/components/layout/protected-route";
 
 // Lazy-loaded route pages for code splitting
 const WelcomePage = lazy(() => import("@/features/auth/welcome-page"));
+const AuthCallbackPage = lazy(() => import("@/features/auth/auth-callback-page"));
 const DashboardPage = lazy(() => import("@/features/dashboard/dashboard-page"));
 const ExpensesPage = lazy(() => import("@/features/expenses/expenses-page"));
 const ExpenseNewPage = lazy(() => import("@/features/expenses/expense-new-page"));
@@ -25,41 +27,42 @@ export function AppRouter() {
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Suspense fallback={<PageSkeleton />}>
         <Routes>
-          {/* Default redirect: / -> /dashboard */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-          {/* Standalone onboarding welcome page */}
+          {/* Public Routes */}
           <Route path="/welcome" element={<WelcomePage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
-          {/* Main App Layout shell for core features */}
-          <Route element={<AppShell />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
+          {/* Protected Routes (Requires Supabase Authentication) */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppShell />}>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
 
-            {/* Expenses */}
-            <Route path="/expenses" element={<ExpensesPage />} />
-            <Route path="/expenses/new" element={<ExpenseForm />} />
-            <Route path="/expenses/:id" element={<ExpenseDetailPage />} />
-            <Route path="/expenses/:id/edit" element={<ExpenseForm />} />
+              {/* Expenses */}
+              <Route path="/expenses" element={<ExpensesPage />} />
+              <Route path="/expenses/new" element={<ExpenseForm />} />
+              <Route path="/expenses/:id" element={<ExpenseDetailPage />} />
+              <Route path="/expenses/:id/edit" element={<ExpenseForm />} />
 
-            {/* Groups & Sub-routes */}
-            <Route path="/groups" element={<GroupsPage />} />
-            <Route path="/groups/new" element={<GroupNewPage />} />
-            <Route path="/groups/:groupId" element={<GroupDetailPage />} />
-            <Route path="/groups/:groupId/:tab" element={<GroupDetailPage />} />
+              {/* Groups & Sub-routes */}
+              <Route path="/groups" element={<GroupsPage />} />
+              <Route path="/groups/new" element={<GroupNewPage />} />
+              <Route path="/groups/:groupId" element={<GroupDetailPage />} />
+              <Route path="/groups/:groupId/:tab" element={<GroupDetailPage />} />
 
-            {/* Friends */}
-            <Route path="/friends" element={<FriendsPage />} />
+              {/* Friends */}
+              <Route path="/friends" element={<FriendsPage />} />
 
-            {/* Settlements & Activity */}
-            <Route path="/settlements" element={<SettlementsPage />} />
-            <Route path="/settlements/new" element={<SettlementNewPage />} />
-            <Route path="/activity" element={<Navigate to="/settlements" replace />} />
+              {/* Settlements & Activity */}
+              <Route path="/settlements" element={<SettlementsPage />} />
+              <Route path="/settlements/new" element={<SettlementNewPage />} />
+              <Route path="/activity" element={<Navigate to="/settlements" replace />} />
 
-            {/* Reports */}
-            <Route path="/reports" element={<ReportsPage />} />
+              {/* Reports */}
+              <Route path="/reports" element={<ReportsPage />} />
 
-            {/* Settings */}
-            <Route path="/settings" element={<SettingsPage />} />
+              {/* Settings */}
+              <Route path="/settings" element={<SettingsPage />} />
+            </Route>
           </Route>
 
           {/* 404 Catch-All */}

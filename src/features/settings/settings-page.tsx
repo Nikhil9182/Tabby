@@ -1,37 +1,22 @@
 import React, { useState } from 'react';
-import { DeleteAccountCard } from './delete-account-card';
 import {
   User as UserIcon,
   Moon,
   Sun,
   Laptop,
-  HardDrive,
-  RefreshCw,
   Database,
+  RefreshCw,
   Download,
-  Trash2,
   ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
-  Info,
   LogOut,
   LogIn,
-  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import { PageHeader } from '@/components/layout/page-header';
 import { CurrencySelector } from '@/components/currency/currency-selector';
 import {
@@ -44,9 +29,7 @@ import {
   useGroups,
   useSettlements,
 } from '@/hooks';
-import { db } from '@/storage/local/database';
-import { seedDemoData } from '@/lib/seed-data';
-import { formatDate, formatRelativeDate } from '@/lib/date';
+import { formatDate } from '@/lib/date';
 import { toMajorUnits } from '@/domain/money/money';
 import { cn } from '@/lib/utils';
 
@@ -54,7 +37,7 @@ export function SettingsPage() {
   const { user, updateProfile, isUpdating } = useCurrentUser();
   const { defaultCurrency, setDefaultCurrency } = useCurrency();
   const { theme, setTheme } = useTheme();
-  const { authState, user: googleUser, signIn, signOut, isAuthenticated } = useAuth();
+  const { user: authUser, signIn, signOut, isAuthenticated } = useAuth();
   const { syncStatus, triggerSync, isSyncing } = useSync();
   const { expenses } = useExpenses();
   const { groups } = useGroups();
@@ -63,23 +46,6 @@ export function SettingsPage() {
   // Profile edit state
   const [name, setName] = useState(user?.name || '');
   const [profileSaved, setProfileSaved] = useState(false);
-
-  // Clear cache dialog
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
-
-  const handleSeedDemo = async () => {
-    setIsSeeding(true);
-    try {
-      await seedDemoData();
-      window.location.href = `${import.meta.env.BASE_URL}dashboard`;
-    } catch (err) {
-      console.error('Failed to seed demo data:', err);
-    } finally {
-      setIsSeeding(false);
-    }
-  };
 
   React.useEffect(() => {
     if (user?.name) {
@@ -95,12 +61,10 @@ export function SettingsPage() {
     setTimeout(() => setProfileSaved(false), 3000);
   };
 
-  // Export JSON
-  const handleExportJSON = async () => {
+  // Export JSON of current server records
+  const handleExportJSON = () => {
     const data = {
-      version: '0.1.0',
-      schemaVersion: db.verno,
-      tables: Object.fromEntries(await Promise.all(db.tables.map(async table => [table.name, await table.toArray()]))),
+      version: '1.0.0',
       exportedAt: new Date().toISOString(),
       user,
       groups,
@@ -153,29 +117,15 @@ export function SettingsPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Clear Local Database Cache
-  const handleClearCache = async () => {
-    setIsClearing(true);
-    try {
-      await Promise.all(db.tables.map((table) => table.clear()));
-      setClearDialogOpen(false);
-      window.location.reload();
-    } catch (err) {
-      console.error('Failed to clear cache:', err);
-    } finally {
-      setIsClearing(false);
-    }
-  };
-
-  const displayName = user?.name || googleUser?.name || 'Local User';
-  const displayEmail = user?.email || googleUser?.email || 'offline@tabby.local';
-  const displayPicture = user?.picture || googleUser?.picture;
+  const displayName = user?.name || authUser?.name || 'User';
+  const displayEmail = user?.email || authUser?.email || '';
+  const displayPicture = user?.picture || authUser?.picture;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-16">
       <PageHeader
         title="Settings"
-        description="Preferences, profile, cloud sync, and local data management."
+        description="Preferences, profile, cloud sync, and data exports."
       />
 
       {/* 1. Profile Section */}
@@ -184,7 +134,7 @@ export function SettingsPage() {
           <div className="flex items-center gap-2">
             <UserIcon className="h-5 w-5 text-[#0055FF]" />
             <h2 className="text-xl font-black tracking-tight text-foreground">
-              Profile & Account
+              Profile &amp; Account
             </h2>
           </div>
           <p className="text-xs text-muted-foreground font-medium">
@@ -194,80 +144,77 @@ export function SettingsPage() {
 
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div className="flex items-center gap-4 pb-2">
-            <Avatar size="lg" className="border-2 border-background ring-2 ring-primary/20">
+            <Avatar className="h-14 w-14 border-2 border-background ring-2 ring-primary/20">
               {displayPicture && <AvatarImage src={displayPicture} alt={displayName} />}
               <AvatarFallback className="font-black text-sm uppercase bg-muted text-foreground">
                 {displayName.slice(0, 2)}
               </AvatarFallback>
             </Avatar>
-
-            <div className="min-w-0 space-y-0.5">
-              <p className="font-bold text-foreground truncate">{displayName}</p>
-              <p className="text-xs text-muted-foreground truncate font-medium">{displayEmail}</p>
-              <Badge variant="outline" className="text-[10px] font-bold capitalize">
-                {isAuthenticated ? 'Connected to Google' : 'Local Workspace'}
-              </Badge>
+            <div className="space-y-0.5">
+              <p className="text-sm font-bold text-foreground">{displayName}</p>
+              <p className="text-xs text-muted-foreground">{displayEmail}</p>
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          <div className="space-y-2">
+            <label htmlFor="settings-name" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
               Display Name
             </label>
             <Input
+              id="settings-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your Name"
-              className="h-11 rounded-2xl bg-muted/30 border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm font-medium max-w-sm"
+              placeholder="Your full name"
+              className="rounded-xl h-11"
             />
           </div>
 
-          {profileSaved && (
-            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>Profile updated</span>
-            </p>
-          )}
-
-          <Button
-            type="submit"
-            disabled={isUpdating}
-            className="h-10 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold"
-          >
-            Save Profile
-          </Button>
+          <div className="flex items-center justify-between pt-2">
+            <Button
+              type="submit"
+              disabled={isUpdating || !name.trim()}
+              className="bg-[#0055FF] hover:bg-[#0055FF]/90 text-white rounded-xl font-bold h-10 px-5"
+            >
+              {isUpdating ? 'Saving...' : 'Save Profile'}
+            </Button>
+            {profileSaved && (
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 animate-in fade-in">
+                <CheckCircle2 className="h-4 w-4" />
+                Profile updated
+              </span>
+            )}
+          </div>
         </form>
       </div>
 
       {/* 2. Preferences (Currency & Theme) */}
-      <div className="rounded-3xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs space-y-5">
-        <div className="space-y-1">
-          <h2 className="text-xl font-black tracking-tight text-foreground">Preferences</h2>
-          <p className="text-xs text-muted-foreground font-medium">
-            Default display units and interface color scheme.
-          </p>
-        </div>
+      <div className="rounded-3xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs space-y-6">
+        <h2 className="text-xl font-black tracking-tight text-foreground">
+          Preferences
+        </h2>
 
         <div className="space-y-5">
           {/* Default Currency */}
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Primary Currency
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+              Default Currency
             </label>
-            <div className="max-w-sm">
-              <CurrencySelector
-                value={defaultCurrency}
-                onChange={setDefaultCurrency}
-              />
-            </div>
+            <CurrencySelector
+              value={defaultCurrency}
+              onChange={(c) => setDefaultCurrency(c)}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used when calculating aggregate dashboard balances and quick expenses.
+            </p>
           </div>
 
           {/* Theme Selector */}
-          <div className="space-y-2 pt-2 border-t border-border/40">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Interface Theme
+          <div className="space-y-2 pt-2 border-t border-border/60">
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+              Theme Mode
             </label>
-            <div className="grid grid-cols-3 gap-3 max-w-sm">
+            <div className="grid grid-cols-3 gap-2.5">
               <button
                 type="button"
                 onClick={() => setTheme('light')}
@@ -281,7 +228,6 @@ export function SettingsPage() {
                 <Sun className="h-4 w-4" />
                 <span>Light</span>
               </button>
-
               <button
                 type="button"
                 onClick={() => setTheme('dark')}
@@ -295,7 +241,6 @@ export function SettingsPage() {
                 <Moon className="h-4 w-4" />
                 <span>Dark</span>
               </button>
-
               <button
                 type="button"
                 onClick={() => setTheme('system')}
@@ -314,33 +259,33 @@ export function SettingsPage() {
         </div>
       </div>
 
-      {/* 3. Google Account & Cloud Sync */}
+      {/* 3. Cloud Database & Authentication */}
       <Card className="border-border/60 shadow-xs">
         <CardHeader className="p-5 pb-3">
           <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-            <HardDrive className="h-4 w-4 text-primary" />
-            <span>Google Drive Synchronization</span>
+            <Database className="h-4 w-4 text-primary" />
+            <span>Supabase Cloud Database</span>
           </CardTitle>
           <CardDescription>
-            Sync ledgers and backup data directly to your personal Google Drive and Sheets.
+            All financial records, groups, and settlements are synchronized with PostgreSQL.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-5 pt-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 rounded-xl border border-border/40 bg-muted/20 gap-3">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-sm">Google Drive Connection</span>
+                <span className="font-semibold text-sm">Authentication Session</span>
                 <Badge
                   variant={isAuthenticated ? 'default' : 'outline'}
                   className="text-[10px] capitalize"
                 >
-                  {isAuthenticated ? 'Connected' : 'Disconnected'}
+                  {isAuthenticated ? 'Signed In' : 'Signed Out'}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground break-words">
                 {isAuthenticated
-                  ? `Authenticated as ${googleUser?.email}`
-                  : 'Connect your Google account to sync spreadsheets across devices.'}
+                  ? `Signed in as ${authUser?.email || displayEmail}`
+                  : 'Please sign in to access your shared financial records.'}
               </p>
             </div>
 
@@ -352,7 +297,7 @@ export function SettingsPage() {
                 className="gap-1.5 shrink-0"
               >
                 <LogOut className="h-3.5 w-3.5" />
-                <span>Disconnect</span>
+                <span>Sign Out</span>
               </Button>
             ) : (
               <Button
@@ -361,28 +306,9 @@ export function SettingsPage() {
                 className="gap-1.5 shrink-0"
               >
                 <LogIn className="h-3.5 w-3.5" />
-                <span>Connect Google</span>
+                <span>Sign In</span>
               </Button>
             )}
-          </div>
-
-          {/* Sync Status Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div className="p-3 rounded-lg border border-border/40 bg-card space-y-1">
-              <span className="text-muted-foreground font-medium">Last Synced</span>
-              <p className="font-semibold text-foreground">
-                {syncStatus.lastSyncedAt
-                  ? formatRelativeDate(syncStatus.lastSyncedAt)
-                  : 'Never synced'}
-              </p>
-            </div>
-
-            <div className="p-3 rounded-lg border border-border/40 bg-card space-y-1">
-              <span className="text-muted-foreground font-medium">Pending Sync Operations</span>
-              <p className="font-semibold text-foreground">
-                {syncStatus.pendingCount} operations waiting
-              </p>
-            </div>
           </div>
 
           <Button
@@ -393,20 +319,20 @@ export function SettingsPage() {
             className="gap-1.5"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isSyncing && 'animate-spin')} />
-            <span>{isSyncing ? 'Synchronizing...' : 'Trigger Manual Sync'}</span>
+            <span>{isSyncing ? 'Refreshing...' : 'Refresh Server Data'}</span>
           </Button>
         </CardContent>
       </Card>
 
-      {/* 4. Data Management (Export & Clear Cache) */}
+      {/* 4. Data Export */}
       <Card className="border-border/60 shadow-xs">
         <CardHeader className="p-5 pb-3">
           <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-            <Database className="h-4 w-4 text-primary" />
-            <span>Data Management & Backup</span>
+            <Download className="h-4 w-4 text-primary" />
+            <span>Data Export &amp; Backup</span>
           </CardTitle>
           <CardDescription>
-            Download your raw financial data or reset local browser IndexedDB storage.
+            Download your raw financial data in CSV or JSON format.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-5 pt-2 space-y-4">
@@ -430,87 +356,30 @@ export function SettingsPage() {
               <Download className="h-3.5 w-3.5" />
               <span>Full Data Backup (JSON)</span>
             </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isSeeding}
-              onClick={handleSeedDemo}
-              className="gap-1.5 border-[#0055FF]/40 text-[#0055FF] hover:bg-[#0055FF]/10 font-bold"
-            >
-              <Sparkles className="h-3.5 w-3.5 fill-[#0055FF]/20" />
-              <span>{isSeeding ? 'Loading Demo Data...' : 'Load Sample Demo Data'}</span>
-            </Button>
-          </div>
-
-          <div className="pt-3 border-t border-border/40">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setClearDialogOpen(true)}
-              className="gap-1.5"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>Clear Local Cache</span>
-            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* 5. App Info & Privacy */}
-      <DeleteAccountCard />
+      {/* 5. App Info & Security */}
       <div className="space-y-3 pt-2 text-xs text-muted-foreground">
         <div className="flex items-center justify-between p-4 rounded-xl border border-border/40 bg-muted/10">
           <div>
-            <p className="font-semibold text-foreground">Tabby Expense Splitting</p>
-            <p>Version 0.1.0 &bull; Database Schema v{db.verno}</p>
+            <p className="font-semibold text-foreground">Tabby</p>
+            <p>Version 1.0.0 &bull; Supabase PostgreSQL</p>
           </div>
           <Badge variant="outline" className="font-mono text-[10px]">
-            Dexie IndexedDB
+            Cloud RLS
           </Badge>
         </div>
 
         <p className="flex items-start gap-1.5 px-1">
           <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
           <span>
-            <strong>Privacy Note:</strong> Tabby operates client-side with zero centralized database
-            servers. All records are stored securely in your browser's IndexedDB and your private
-            Google Drive storage.
+            <strong>Security Guarantee:</strong> Financial data is protected by PostgreSQL Row Level Security.
+            Only authorized group members can read and update shared ledgers.
           </span>
         </p>
       </div>
-
-      {/* Clear Cache Confirmation Dialog */}
-      <Dialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
-              <AlertTriangle className="h-5 w-5" />
-              <span>Clear Local Database?</span>
-            </DialogTitle>
-            <DialogDescription>
-              This will remove all expenses, groups, and settlements stored locally on this browser.
-              Make sure you have exported a JSON backup or synchronized with Google Drive first!
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setClearDialogOpen(false)}
-              disabled={isClearing}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleClearCache}
-              disabled={isClearing}
-            >
-              {isClearing ? 'Clearing...' : 'Yes, Clear Local Cache'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
