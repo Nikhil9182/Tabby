@@ -366,6 +366,12 @@ export function SettingsPage() {
           <div>
             <p className="font-semibold text-foreground">Tabby</p>
             <p>Version 1.0.0 &bull; Supabase PostgreSQL</p>
+            <a
+              href={`${import.meta.env.BASE_URL}privacy.html`}
+              className="underline-offset-4 hover:underline hover:text-foreground"
+            >
+              Privacy Policy
+            </a>
           </div>
           <Badge variant="outline" className="font-mono text-[10px]">
             Cloud RLS

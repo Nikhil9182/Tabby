@@ -199,7 +199,13 @@ export function WelcomePage() {
 
       {/* Footer */}
       <footer className="max-w-5xl w-full mx-auto text-center text-xs text-muted-foreground pt-8 border-t border-border/50">
-        Tabby &bull; Centralized Expense Management &bull; {new Date().getFullYear()}
+        Tabby &bull; Centralized Expense Management &bull; {new Date().getFullYear()} &bull;{' '}
+        <a
+          href={`${import.meta.env.BASE_URL}privacy.html`}
+          className="underline-offset-4 hover:underline hover:text-foreground"
+        >
+          Privacy Policy
+        </a>
       </footer>
     </div>
   );

@@ -11,6 +11,7 @@
     "deploy": "gh-pages -d dist",
     "lint": "oxlint",
     "test": "vitest run",
+    "icons:generate": "node scripts/generate-all-icons.mjs",
     "db:inspect": "node scripts/inspect-schema.mjs",
     "preview": "vite preview"
   },
@@ -38,6 +39,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
