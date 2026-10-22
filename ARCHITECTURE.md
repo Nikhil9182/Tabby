@@ -253,6 +253,28 @@ When enabled for a group, Tabby computes net balances for all members and runs a
   2. **L2 (PostgreSQL Cache)**: `currency_rates_cache` table shared across all group users, minimizing external API calls.
 - **Rate Freezing**: When an expense is recorded in a foreign currency, the exact conversion rate is permanently recorded on the `group_expenses` record (`exchange_rate` column). Future fluctuations never alter historical debts.
 
+### 8.1 Conversion policy
+
+Two currencies are never confused:
+
+- **Transaction currency**: what an expense or settlement was actually recorded in (`currency` + `amount_minor`). It is never rewritten.
+- **Display currency**: the user's preference (`profiles.preferred_currency`). Changing it only changes how amounts are *shown*.
+
+| What | Policy | Rate used |
+| --- | --- | --- |
+| **Balances (who owes whom)** | Kept **per transaction currency**. A USD share creates a USD debt; a USD settlement reduces a USD debt. Raw amounts in different currencies are never added. | None. The ledger never converts. |
+| **Balance totals shown to the user** | Each currency bucket is converted once to the display currency and summed, shown with `≈`. | **Latest** rate (current indicative value). |
+| **Reports (spending history)** | Each expense share is converted to the display currency. | Rate on the **expense date**. The stored snapshot is reused when its target matches the display currency. |
+| **Cross-currency settlement** | Paid amount + currency are stored as-is. The amount applied to the debt (`applied_amount_minor` in `applied_currency`) is converted **once** at recording time and stored with the rate, rate date and source. | Rate on the **settlement date**, frozen on the record. |
+
+Rules:
+
+1. Same currency → amount returned unchanged, no network call.
+2. A missing rate is **never** treated as 1:1 and never substituted with another date's rate. The original amount stays visible with a "conversion unavailable" state and a retry.
+3. Rates are `target per 1 source`: `converted = original × rate`, scaled by each currency's minor-unit precision (from `CURRENCY_INFO`, else `Intl` ISO 4217 data). Rounding is half-away-from-zero, applied once per converted bucket.
+4. Frankfurter carries the previous business day's rate forward for weekends and holidays and returns the effective date; that date is what Tabby records and shows.
+5. Legacy rows keep their recorded amount and currency. Snapshot metadata that cannot be recovered is marked `exchange_rate_source = 'unavailable'`; it is never back-filled with an invented rate.
+
 ---
 
 ## 9. Security & Deployment

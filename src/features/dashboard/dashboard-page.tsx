@@ -24,8 +24,10 @@ import { useGroups } from "@/hooks/use-groups";
 import { useSettlements } from "@/hooks/use-settlements";
 import { useFriends } from "@/hooks/use-friends";
 import { useCurrentUser, useUsers } from "@/hooks/use-users";
-import { useCurrency } from "@/hooks/use-currency";
+import { useDisplayConversion } from "@/hooks/use-currency";
 import { formatMoney } from "@/domain/money/money";
+import { bagCurrencies, type MoneyBag } from "@/domain/money/conversion";
+import { BalanceAmount } from "@/components/currency/converted-amount";
 import {
   calculateDashboardBalances,
   type PairwiseBalance,
@@ -42,8 +44,6 @@ export function DashboardPage() {
   const { settlements, isLoading: settlementsLoading } = useSettlements();
   const { friends, isLoading: friendsLoading } = useFriends();
   const { users } = useUsers();
-  const { defaultCurrency } = useCurrency();
-  const curr = defaultCurrency || "USD";
 
   const isCurrentUserEntity = (userId: string | undefined): boolean => {
     if (!userId) return false;
@@ -82,10 +82,23 @@ export function DashboardPage() {
       allSplitsList,
       settlements,
       friendIds,
-      groups,
-      curr
+      groups
     );
-  }, [currentUserId, expenses, allSplitsList, settlements, friendIds, groups, curr]);
+  }, [currentUserId, expenses, allSplitsList, settlements, friendIds, groups]);
+
+  // Balances stay per currency; convert once for display at the latest rate
+  const conversion = useDisplayConversion([
+    ...bagCurrencies(dashboardBalances.overall.owedByCurrency),
+    ...bagCurrencies(dashboardBalances.overall.owedToYouByCurrency),
+  ]);
+
+  /** Overall sign of a bag in the display currency (by signs when a rate is missing). */
+  const bagSign = (bag: MoneyBag): number => {
+    const { totalMinor } = conversion.convert(bag);
+    if (totalMinor !== null) return Math.sign(totalMinor);
+    const values = bagCurrencies(bag).map((c) => bag[c]);
+    return values.every((v) => v > 0) ? 1 : values.every((v) => v < 0) ? -1 : 0;
+  };
 
   // Determine active data
   const activeExpenses = useMemo(() => {
@@ -99,45 +112,40 @@ export function DashboardPage() {
   const hasExpenses = activeExpenses.length > 0;
   const hasGroups = activeGroups.length > 0;
 
-  // Formatting net balance
-  const netAmount = dashboardBalances.overall.netBalance;
-  const formattedNet = formatMoney(Math.abs(netAmount), curr);
-  const netSign = netAmount > 0 ? "+" : netAmount < 0 ? "−" : "";
+  // Net balance across everything, per currency
+  const netBag = dashboardBalances.overall.netByCurrency;
+  const netSignValue = bagSign(netBag);
   const netSubtitle =
-    netAmount > 0
+    netSignValue > 0
       ? "Total amount owed to you across direct friends and groups"
-      : netAmount < 0
+      : netSignValue < 0
       ? "Total amount you owe across direct friends and groups"
+      : bagCurrencies(netBag).length > 0
+      ? "You owe and are owed in different currencies"
       : hasExpenses
       ? "All tabs are clear! You are fully settled up."
       : "Start by adding a friend, recording an expense, or creating a group.";
 
-  // Direct friends with active balances
-  const directFriendsWithBalance = useMemo(() => {
-    return dashboardBalances.direct.pairwise
-      .filter((p) => p.amountMinor > 0)
-      .map((p) => {
-        const isUserDebtor = isCurrentUserEntity(p.fromUserId);
-        const otherUserId = isUserDebtor ? p.toUserId : p.fromUserId;
-        const name = getUserName(otherUserId);
-        const inits = name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase() || "FR";
-        return {
-          id: otherUserId,
-          name,
-          initials: inits,
-          amountMinor: p.amountMinor,
-          type: isUserDebtor ? ("owe" as const) : ("owed" as const),
-          avatarBg: isUserDebtor
-            ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-700/50"
-            : "bg-[#D4FF00] text-black",
-          currency: p.currency || curr,
-        };
-      });
-  }, [dashboardBalances.direct.pairwise, currentUserId, friends, users, curr, currentUser]);
+  // Direct friends with active balances (each friend's balance kept per currency)
+  const directFriendsWithBalance = dashboardBalances.direct.byFriend.map(({ friendId, netByCurrency }) => {
+    const isUserDebtor = bagSign(netByCurrency) < 0;
+    const name = getUserName(friendId);
+    const inits = name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase() || "FR";
+    return {
+      id: friendId,
+      name,
+      initials: inits,
+      net: netByCurrency,
+      type: isUserDebtor ? ("owe" as const) : ("owed" as const),
+      avatarBg: isUserDebtor
+        ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-700/50"
+        : "bg-[#D4FF00] text-black",
+    };
+  });
 
   // Groups with active balances
   const groupsWithBalance = useMemo(() => {
-    return dashboardBalances.groups.byGroup.filter((g) => g.netBalance !== 0 || g.totalOwed > 0 || g.totalOwedToYou > 0);
+    return dashboardBalances.groups.byGroup.filter((g) => bagCurrencies(g.netByCurrency).length > 0);
   }, [dashboardBalances.groups.byGroup]);
 
   // Display recent activity items with clear contextual labels
@@ -276,9 +284,14 @@ export function DashboardPage() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           {/* Main Net Amount */}
           <div className="flex items-center gap-4 sm:gap-6 flex-wrap sm:flex-nowrap">
-            <span className="min-w-0 max-w-full break-all text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-black select-none">
-              {hasExpenses ? `${netSign}${formattedNet}` : formatMoney(0, curr)}
-            </span>
+            <BalanceAmount
+              bag={netBag}
+              conversion={conversion}
+              mode="signed"
+              className="min-w-0 max-w-full text-black select-none"
+              amountClassName="break-all text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-black"
+              detailClassName="text-black/70 font-semibold"
+            />
 
             <div className="space-y-0.5">
               <p className="text-sm sm:text-base font-extrabold text-black leading-tight">
@@ -296,9 +309,12 @@ export function DashboardPage() {
 
             {/* Total Owed To You */}
             <div className="space-y-0.5">
-              <p className="text-xl sm:text-2xl font-black text-black">
-                {formatMoney(dashboardBalances.overall.totalOwedToYou, curr)}
-              </p>
+              <BalanceAmount
+                bag={dashboardBalances.overall.owedToYouByCurrency}
+                conversion={conversion}
+                amountClassName="text-xl sm:text-2xl font-black text-black"
+                detailClassName="text-black/70"
+              />
               <p className="text-xs sm:text-sm text-black/75 font-semibold flex items-center gap-1">
                 <span>Total owed to you</span>
               </p>
@@ -308,9 +324,12 @@ export function DashboardPage() {
 
             {/* Total You Owe */}
             <div className="space-y-0.5">
-              <p className="text-xl sm:text-2xl font-black text-black">
-                {formatMoney(dashboardBalances.overall.totalOwed, curr)}
-              </p>
+              <BalanceAmount
+                bag={dashboardBalances.overall.owedByCurrency}
+                conversion={conversion}
+                amountClassName="text-xl sm:text-2xl font-black text-black"
+                detailClassName="text-black/70"
+              />
               <p className="text-xs sm:text-sm text-black/75 font-semibold flex items-center gap-1">
                 <span>Total you owe</span>
               </p>
@@ -345,8 +364,6 @@ export function DashboardPage() {
           {directFriendsWithBalance.length > 0 ? (
             <div className="space-y-2.5">
               {directFriendsWithBalance.map((person) => {
-                const formattedAmt = formatMoney(person.amountMinor, person.currency);
-
                 return (
                   <Link
                     key={person.id}
@@ -373,16 +390,18 @@ export function DashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-2.5 shrink-0">
-                      <span
-                        className={cn(
-                          "text-sm font-black",
+                      <BalanceAmount
+                        bag={person.net}
+                        conversion={conversion}
+                        size="sm"
+                        className="items-end text-right"
+                        amountClassName={cn(
+                          "font-black",
                           person.type === "owe"
                             ? "text-rose-600 dark:text-rose-400"
                             : "text-emerald-600 dark:text-emerald-400"
                         )}
-                      >
-                        {formattedAmt}
-                      </span>
+                      />
                       <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:translate-x-0.5 group-hover:text-[#0055FF] transition-all" />
                     </div>
                   </Link>
@@ -424,9 +443,9 @@ export function DashboardPage() {
           {groupsWithBalance.length > 0 ? (
             <div className="space-y-2.5">
               {groupsWithBalance.map((grp) => {
-                const isUserDebtor = grp.netBalance < 0;
-                const isUserCreditor = grp.netBalance > 0;
-                const formattedAmt = formatMoney(Math.abs(grp.netBalance), grp.currency || curr);
+                const sign = bagSign(grp.netByCurrency);
+                const isUserDebtor = sign < 0;
+                const isUserCreditor = sign > 0;
 
                 return (
                   <Link
@@ -449,18 +468,20 @@ export function DashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-2.5 shrink-0">
-                      <span
-                        className={cn(
-                          "text-sm font-black",
+                      <BalanceAmount
+                        bag={grp.netByCurrency}
+                        conversion={conversion}
+                        size="sm"
+                        className="items-end text-right"
+                        amountClassName={cn(
+                          "font-black",
                           isUserDebtor
                             ? "text-rose-600 dark:text-rose-400"
                             : isUserCreditor
                             ? "text-emerald-600 dark:text-emerald-400"
                             : "text-muted-foreground"
                         )}
-                      >
-                        {formattedAmt}
-                      </span>
+                      />
                       <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:translate-x-0.5 group-hover:text-[#0055FF] transition-all" />
                     </div>
                   </Link>

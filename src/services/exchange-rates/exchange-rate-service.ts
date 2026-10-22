@@ -1,24 +1,67 @@
 import { supabase, checkSupabaseConfig } from '../../lib/supabase';
 import type { ExchangeRateCache } from '../../domain/models/types';
+import {
+  convertMinor,
+  identityQuote,
+  normalizeCurrency,
+  rateKey,
+  type RateQuote,
+} from '../../domain/money/conversion';
 
 export const FRANKFURTER_BASE = 'https://api.frankfurter.dev/v2';
 
 const CURRENCY_CACHE_KEY = 'tabby_currencies_cache';
+
+/** How long a "latest" rate is reused before asking the provider again. */
+const LATEST_RATE_TTL_MS = 60 * 60 * 1000;
+
+export type ExchangeRateErrorKind = 'unsupported' | 'network' | 'unavailable';
+
+/** Thrown when no valid rate can be produced. Never swallowed into a 1:1 rate. */
+export class ExchangeRateError extends Error {
+  readonly kind: ExchangeRateErrorKind;
+  readonly from: string;
+  readonly to: string;
+  readonly date?: string;
+
+  constructor(kind: ExchangeRateErrorKind, from: string, to: string, date: string | undefined, detail: string) {
+    const when = date ? ` on ${date}` : '';
+    super(`No exchange rate from ${from} to ${to}${when}: ${detail}`);
+    this.name = 'ExchangeRateError';
+    this.kind = kind;
+    this.from = from;
+    this.to = to;
+    this.date = date;
+  }
+}
 
 export interface CurrencyConversionResult {
   convertedMinor: number;
   rate: number;
   rateDate: string;
   source: 'identity' | 'network' | 'cache';
+  quote: RateQuote;
+}
+
+const CODE_RE = /^[A-Z]{3}$/;
+
+function toLegacyCache(quote: RateQuote): ExchangeRateCache {
+  return {
+    baseCurrency: quote.from,
+    quoteCurrency: quote.to,
+    rate: quote.rate,
+    rateDate: quote.effectiveDate,
+    fetchedAt: quote.fetchedAt,
+    source: quote.source === 'network' ? 'frankfurter' : quote.source,
+  };
 }
 
 export class ExchangeRateService {
   private currenciesMemoryCache: Record<string, string> | null = null;
-  private inMemoryRates: Map<string, ExchangeRateCache> = new Map();
-
-  private getRateKey(base: string, quote: string, date?: string): string {
-    return `${base.toUpperCase()}_${quote.toUpperCase()}_${date || 'latest'}`;
-  }
+  /** L1: successful quotes only. Historical entries never expire. */
+  private memory = new Map<string, RateQuote>();
+  /** Requests in flight, so concurrent callers share one network call. */
+  private inFlight = new Map<string, Promise<RateQuote>>();
 
   async getAvailableCurrencies(): Promise<Record<string, string>> {
     // 1. Try in-memory cache
@@ -86,196 +129,141 @@ export class ExchangeRateService {
     };
   }
 
-  async getLatestRate(base: string, quote: string): Promise<ExchangeRateCache> {
-    const normBase = base.toUpperCase();
-    const normQuote = quote.toUpperCase();
+  /**
+   * Rate for from→to. With `date` (YYYY-MM-DD) returns that date's rate or throws;
+   * it never substitutes another date. Without `date` returns the latest rate,
+   * falling back to the newest cached rate (marked source 'cache') when offline.
+   */
+  async getRate(fromCurrency: string, toCurrency: string, date?: string): Promise<RateQuote> {
+    const from = normalizeCurrency(fromCurrency);
+    const to = normalizeCurrency(toCurrency);
+    if (from === to) return identityQuote(from, date);
 
-    if (normBase === normQuote) {
-      const today = new Date().toISOString().slice(0, 10);
-      return {
-        baseCurrency: normBase,
-        quoteCurrency: normQuote,
-        rateDate: today,
-        rate: 1.0,
-        fetchedAt: new Date().toISOString(),
-        source: 'identity',
-      };
+    if (!CODE_RE.test(from) || !CODE_RE.test(to)) {
+      throw new ExchangeRateError('unsupported', from, to, date, 'invalid currency code');
     }
 
-    try {
-      const response = await fetch(`${FRANKFURTER_BASE}/rate/${normBase}/${normQuote}`);
-      if (!response.ok) {
-        throw new Error(`Frankfurter rate error: HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (typeof data.rate !== 'number') {
-        throw new Error(`Invalid rate format received from Frankfurter: ${JSON.stringify(data)}`);
-      }
-
-      const entry: ExchangeRateCache = {
-        baseCurrency: normBase,
-        quoteCurrency: normQuote,
-        rateDate: data.date || new Date().toISOString().slice(0, 10),
-        rate: data.rate,
-        fetchedAt: new Date().toISOString(),
-        source: 'frankfurter',
-      };
-
-      this.inMemoryRates.set(this.getRateKey(normBase, normQuote), entry);
-      this.inMemoryRates.set(this.getRateKey(normBase, normQuote, entry.rateDate), entry);
-
-      // Async write to Supabase cache if available
-      this.persistRateToSupabase(entry);
-
-      return entry;
-    } catch (networkError) {
-      const cached = await this.getCachedRate(normBase, normQuote);
-      if (cached) {
-        return cached;
-      }
-      throw new Error(
-        `Unable to fetch exchange rate from ${normBase} to ${normQuote} and no cached rate found: ${(networkError as Error).message}`
-      );
+    const key = rateKey(from, to, date);
+    const remembered = this.memory.get(key);
+    if (remembered && (date || Date.now() - Date.parse(remembered.fetchedAt) < LATEST_RATE_TTL_MS)) {
+      return remembered;
     }
+
+    const pending = this.inFlight.get(key);
+    if (pending) return pending;
+
+    const request = this.resolveRate(from, to, date).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, request);
+    return request;
   }
 
-  async getHistoricalRate(base: string, quote: string, date: string): Promise<ExchangeRateCache> {
-    const normBase = base.toUpperCase();
-    const normQuote = quote.toUpperCase();
-
-    if (normBase === normQuote) {
-      return {
-        baseCurrency: normBase,
-        quoteCurrency: normQuote,
-        rateDate: date,
-        rate: 1.0,
-        fetchedAt: new Date().toISOString(),
-        source: 'identity',
-      };
-    }
-
-    // Check if we already have this exact date cached
-    const existingCache = await this.getCachedRate(normBase, normQuote, date);
-    if (existingCache) {
-      return existingCache;
-    }
-
-    try {
-      const url = `${FRANKFURTER_BASE}/rate/${normBase}/${normQuote}?date=${encodeURIComponent(date)}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Frankfurter historical rate error: HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (typeof data.rate !== 'number') {
-        throw new Error(`Invalid historical rate format: ${JSON.stringify(data)}`);
-      }
-
-      const entry: ExchangeRateCache = {
-        baseCurrency: normBase,
-        quoteCurrency: normQuote,
-        rateDate: data.date || date,
-        rate: data.rate,
-        fetchedAt: new Date().toISOString(),
-        source: 'frankfurter',
-      };
-
-      this.inMemoryRates.set(this.getRateKey(normBase, normQuote, date), entry);
-      this.persistRateToSupabase(entry);
-
-      return entry;
-    } catch (networkError) {
-      // Fallback to closest cached rate for this pair if exact date is missing
-      const cached = await this.getCachedRate(normBase, normQuote);
-      if (cached) {
-        return cached;
-      }
-      throw new Error(
-        `Unable to fetch historical rate from ${normBase} to ${normQuote} on ${date}: ${(networkError as Error).message}`
-      );
-    }
-  }
-
-  async getCachedRate(base: string, quote: string, date?: string): Promise<ExchangeRateCache | undefined> {
-    const normBase = base.toUpperCase();
-    const normQuote = quote.toUpperCase();
-
-    if (normBase === normQuote) {
-      return {
-        baseCurrency: normBase,
-        quoteCurrency: normQuote,
-        rateDate: date || new Date().toISOString().slice(0, 10),
-        rate: 1.0,
-        fetchedAt: new Date().toISOString(),
-        source: 'identity',
-      };
-    }
-
-    // 1. Check in-memory Map
+  private async resolveRate(from: string, to: string, date?: string): Promise<RateQuote> {
+    // Historical rates are immutable: a stored copy is as good as a fresh one
     if (date) {
-      const inMem = this.inMemoryRates.get(this.getRateKey(normBase, normQuote, date));
-      if (inMem) return inMem;
-    }
-    const latestInMem = this.inMemoryRates.get(this.getRateKey(normBase, normQuote));
-    if (latestInMem) return latestInMem;
-
-    // 2. Check Supabase currency_rates_cache if configured
-    if (checkSupabaseConfig().isConfigured) {
-      try {
-        let query = supabase
-          .from('currency_rates_cache')
-          .select('*')
-          .eq('base_currency', normBase)
-          .eq('quote_currency', normQuote);
-
-        if (date) {
-          query = query.eq('rate_date', date);
-        } else {
-          query = query.order('rate_date', { ascending: false }).limit(1);
-        }
-
-        const { data } = await query;
-        if (data && data.length > 0) {
-          const row = data[0];
-          const entry: ExchangeRateCache = {
-            baseCurrency: row.base_currency,
-            quoteCurrency: row.quote_currency,
-            rate: row.rate,
-            rateDate: row.rate_date,
-            fetchedAt: row.fetched_at,
-            source: row.source,
-          };
-          this.inMemoryRates.set(this.getRateKey(normBase, normQuote, date), entry);
-          return entry;
-        }
-      } catch {
-        // Fallback silently if offline or database error
+      const stored = await this.readStoredRate(from, to, date);
+      if (stored) {
+        this.memory.set(rateKey(from, to, date), stored);
+        return stored;
       }
     }
 
-    return undefined;
+    try {
+      const quote = await this.fetchRate(from, to, date);
+      this.memory.set(rateKey(from, to, date), quote);
+      void this.persistRate(quote);
+      return quote;
+    } catch (err) {
+      if (err instanceof ExchangeRateError && err.kind === 'unsupported') throw err;
+      if (!date) {
+        // Offline: the newest stored rate, clearly marked as cached
+        const stored = await this.readStoredRate(from, to);
+        if (stored) return stored;
+      }
+      if (err instanceof ExchangeRateError) throw err;
+      throw new ExchangeRateError('network', from, to, date, (err as Error).message);
+    }
   }
 
-  private async persistRateToSupabase(entry: ExchangeRateCache): Promise<void> {
-    if (!checkSupabaseConfig().isConfigured) return;
+  private async fetchRate(from: string, to: string, date?: string): Promise<RateQuote> {
+    const url = `${FRANKFURTER_BASE}/rate/${from}/${to}${date ? `?date=${encodeURIComponent(date)}` : ''}`;
+    const response = await fetch(url);
 
+    if (response.status === 404 || response.status === 422) {
+      throw new ExchangeRateError('unsupported', from, to, date, 'currency pair not supported by the provider');
+    }
+    if (!response.ok) {
+      throw new ExchangeRateError('network', from, to, date, `provider returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (typeof data?.rate !== 'number' || !(data.rate > 0)) {
+      throw new ExchangeRateError('unavailable', from, to, date, 'provider returned no usable rate');
+    }
+
+    return {
+      from,
+      to,
+      rate: data.rate,
+      requestedDate: date || 'latest',
+      effectiveDate: typeof data.date === 'string' ? data.date : date || new Date().toISOString().slice(0, 10),
+      source: 'network',
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  /** L2 lookup. With a date: that exact date only. Without: the newest stored rate. */
+  private async readStoredRate(from: string, to: string, date?: string): Promise<RateQuote | undefined> {
+    if (!checkSupabaseConfig().isConfigured) return undefined;
+    try {
+      let query = (supabase.from('currency_rates_cache') as any)
+        .select('*')
+        .eq('base_currency', from)
+        .eq('quote_currency', to);
+      query = date ? query.eq('rate_date', date) : query.order('rate_date', { ascending: false });
+      const { data } = await query.limit(1);
+      const row = data?.[0];
+      if (!row || !(Number(row.rate) > 0)) return undefined;
+      return {
+        from,
+        to,
+        rate: Number(row.rate),
+        requestedDate: date || 'latest',
+        effectiveDate: row.rate_date,
+        source: 'cache',
+        fetchedAt: row.fetched_at,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async persistRate(quote: RateQuote): Promise<void> {
+    if (!checkSupabaseConfig().isConfigured || quote.source !== 'network') return;
     try {
       await (supabase.from('currency_rates_cache') as any).upsert(
         {
-          base_currency: entry.baseCurrency,
-          quote_currency: entry.quoteCurrency,
-          rate: entry.rate,
-          rate_date: entry.rateDate,
-          source: entry.source || 'frankfurter',
-          fetched_at: entry.fetchedAt,
+          base_currency: quote.from,
+          quote_currency: quote.to,
+          rate: quote.rate,
+          rate_date: quote.effectiveDate,
+          source: 'frankfurter',
+          fetched_at: quote.fetchedAt,
         },
-        { onConflict: 'base_currency,quote_currency,rate_date' }
+        { onConflict: 'base_currency,quote_currency,rate_date', ignoreDuplicates: true }
       );
     } catch {
       // Ignore background cache write failures
     }
+  }
+
+  // --- Compatibility wrappers -------------------------------------------------
+
+  async getLatestRate(base: string, quote: string): Promise<ExchangeRateCache> {
+    return toLegacyCache(await this.getRate(base, quote));
+  }
+
+  async getHistoricalRate(base: string, quote: string, date: string): Promise<ExchangeRateCache> {
+    return toLegacyCache(await this.getRate(base, quote, date));
   }
 
   async convertAmount(
@@ -284,46 +272,13 @@ export class ExchangeRateService {
     toCurrency: string,
     date?: string
   ): Promise<CurrencyConversionResult> {
-    const normFrom = fromCurrency.toUpperCase();
-    const normTo = toCurrency.toUpperCase();
-
-    if (normFrom === normTo) {
-      return {
-        convertedMinor: amountMinor,
-        rate: 1.0,
-        rateDate: date || new Date().toISOString().slice(0, 10),
-        source: 'identity',
-      };
-    }
-
-    let rateEntry: ExchangeRateCache;
-    let source: 'network' | 'cache' = 'network';
-
-    try {
-      if (date) {
-        // Try historical rate
-        rateEntry = await this.getHistoricalRate(normFrom, normTo, date);
-      } else {
-        rateEntry = await this.getLatestRate(normFrom, normTo);
-      }
-    } catch {
-      // Network failed; attempt cache fallback
-      const cached = await this.getCachedRate(normFrom, normTo, date);
-      if (!cached) {
-        throw new Error(`Exchange rate conversion failed: No rate available from ${normFrom} to ${normTo}`);
-      }
-      rateEntry = cached;
-      source = 'cache';
-    }
-
-    // Calculate integer minor units using Math.round to avoid floating precision discrepancies
-    const convertedMinor = Math.round(amountMinor * rateEntry.rate);
-
+    const quote = await this.getRate(fromCurrency, toCurrency, date);
     return {
-      convertedMinor,
-      rate: rateEntry.rate,
-      rateDate: rateEntry.rateDate,
-      source,
+      convertedMinor: convertMinor(amountMinor, quote.from, quote.to, quote.rate),
+      rate: quote.rate,
+      rateDate: quote.effectiveDate,
+      source: quote.source,
+      quote,
     };
   }
 
@@ -334,6 +289,12 @@ export class ExchangeRateService {
     date?: string
   ): Promise<CurrencyConversionResult> {
     return this.convertAmount(amountMinor, fromCurrency, toCurrency, date);
+  }
+
+  /** Test hook: forget all cached rates. */
+  clearMemoryCache(): void {
+    this.memory.clear();
+    this.inFlight.clear();
   }
 }
 

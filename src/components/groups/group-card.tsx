@@ -2,7 +2,6 @@ import React from 'react';
 import { Users, ArrowUpRight, ArrowDownLeft, CheckCircle2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage, AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { CurrencyDisplay } from '@/components/currency/currency-display';
 import type { Group, User } from '@/domain/models/types';
 import { cn } from '@/lib/utils';
 
@@ -10,7 +9,10 @@ export interface GroupCardProps {
   group: Group;
   members?: User[];
   memberCount?: number;
-  netBalanceMinor?: number; // positive = owed to you, negative = you owe, 0 = settled
+  /** 1 = you are owed, -1 = you owe, 0 = settled (or mixed currencies netting to zero). */
+  netSign?: number;
+  /** The rendered balance (e.g. a BalanceAmount), already converted for display. */
+  balance?: React.ReactNode;
   expenseCount?: number;
   currency?: string;
   onClick?: () => void;
@@ -21,7 +23,8 @@ export function GroupCard({
   group,
   members = [],
   memberCount,
-  netBalanceMinor = 0,
+  netSign = 0,
+  balance,
   expenseCount,
   currency = 'USD',
   onClick,
@@ -32,9 +35,9 @@ export function GroupCard({
   const displayedMembers = members.slice(0, 4);
   const remainingMembers = Math.max(0, totalMemberCount - displayedMembers.length);
 
-  const isOwed = netBalanceMinor > 0;
-  const isOwing = netBalanceMinor < 0;
-  const isSettled = netBalanceMinor === 0;
+  const isOwed = netSign > 0;
+  const isOwing = netSign < 0;
+  const isSettled = netSign === 0 && !balance;
 
   const hasCoverImage = Boolean(group.imageUrl);
 
@@ -213,25 +216,24 @@ export function GroupCard({
             {isOwed && 'You are owed'}
             {isOwing && 'You owe'}
             {isSettled && 'Settled up'}
+            {!isOwed && !isOwing && !isSettled && 'Mixed currencies'}
           </span>
         </div>
 
-        {!isSettled ? (
-          <CurrencyDisplay
-            amountMinor={Math.abs(netBalanceMinor)}
-            currency={displayCurrency}
-            colorize={!hasCoverImage}
-            size="sm"
-            className={hasCoverImage ? 'text-white font-black' : undefined}
-          />
-        ) : (
+        {!isSettled && (
           <span
             className={cn(
-              'text-xs font-bold',
-              hasCoverImage ? 'text-white/80' : 'text-muted-foreground'
+              'text-right',
+              hasCoverImage
+                ? 'text-white font-black [&_*]:!text-white'
+                : isOwed
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : isOwing
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : undefined
             )}
           >
-            ₹0.00
+            {balance}
           </span>
         )}
       </div>

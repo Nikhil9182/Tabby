@@ -1,8 +1,49 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
+import type { Settlement } from '@/domain/models/types';
 import { friendService } from './friend-service';
 
-export type DbSettlement = Database['public']['Tables']['settlements']['Row'];
+export type DbSettlement = Database['public']['Tables']['settlements']['Row'] & {
+  applied_currency?: string | null;
+  applied_amount_minor?: number | null;
+  exchange_rate_source?: string | null;
+};
+
+/** The one mapping from a settlements row to the domain type. */
+export function toSettlement(s: DbSettlement): Settlement {
+  return {
+    id: s.id,
+    contextType: ((s as any).context_type as 'direct' | 'group') || (s.group_id ? 'group' : 'direct'),
+    friendshipId: (s as any).friendship_id || undefined,
+    sourceType: s.group_id ? 'group' : undefined,
+    sourceId: s.group_id || (s as any).friendship_id || 'direct',
+    groupId: s.group_id || undefined,
+    fromUserId: s.from_user_id,
+    toUserId: s.to_user_id,
+    amountMinor: Number(s.amount_minor),
+    currency: s.currency,
+    appliedCurrency: s.applied_currency || undefined,
+    appliedAmountMinor: s.applied_amount_minor != null ? Number(s.applied_amount_minor) : undefined,
+    settlementDate: s.settlement_date,
+    notes: s.notes || undefined,
+    exchangeRate: s.exchange_rate != null ? Number(s.exchange_rate) : undefined,
+    exchangeRateDate: s.exchange_rate_date || undefined,
+    exchangeRateSource: s.exchange_rate_source || undefined,
+    createdAt: s.created_at,
+    updatedAt: s.updated_at,
+    createdBy: s.created_by,
+    deletedAt: s.deleted_at,
+  };
+}
+
+/** Frozen conversion for a settlement paid in a different currency from the debt. */
+export interface SettlementConversionSnapshot {
+  appliedCurrency: string;
+  appliedAmountMinor: number;
+  exchangeRate: number;
+  exchangeRateDate: string;
+  exchangeRateSource: string;
+}
 
 export interface CreateSettlementInput {
   groupId?: string;
@@ -14,7 +55,21 @@ export interface CreateSettlementInput {
   currency: string;
   notes?: string;
   settlementDate?: string;
-  exchangeRate?: number;
+  conversion?: SettlementConversionSnapshot;
+}
+
+function conversionColumns(input: CreateSettlementInput) {
+  const c = input.conversion;
+  if (!c || c.appliedCurrency.toUpperCase() === input.currency.toUpperCase()) {
+    return { exchange_rate: 1.0, exchange_rate_source: 'identity' };
+  }
+  return {
+    applied_currency: c.appliedCurrency.toUpperCase(),
+    applied_amount_minor: c.appliedAmountMinor,
+    exchange_rate: c.exchangeRate,
+    exchange_rate_date: c.exchangeRateDate,
+    exchange_rate_source: c.exchangeRateSource,
+  };
 }
 
 class SettlementService {
@@ -65,22 +120,39 @@ class SettlementService {
       const otherUser = input.fromUserId === user.id ? input.toUserId : input.fromUserId;
       const friendId = input.friendId || otherUser;
 
+      const conversion = conversionColumns(input);
+      const rpcArgs: Record<string, unknown> = {
+        p_friend_id: friendId,
+        p_amount_minor: input.amountMinor,
+        p_currency: input.currency.toUpperCase(),
+        p_settlement_date: input.settlementDate || new Date().toISOString(),
+        p_notes: input.notes?.trim() || null,
+        p_payer_id: input.fromUserId,
+        p_recipient_id: input.toUserId,
+      };
+      if ('applied_currency' in conversion) {
+        Object.assign(rpcArgs, {
+          p_applied_currency: conversion.applied_currency,
+          p_applied_amount_minor: conversion.applied_amount_minor,
+          p_exchange_rate: conversion.exchange_rate,
+          p_exchange_rate_date: conversion.exchange_rate_date,
+          p_exchange_rate_source: conversion.exchange_rate_source,
+        });
+      }
+
       // Try RPC first
       try {
-        const { data, error } = await (supabase.rpc as any)('record_direct_settlement', {
-          p_friend_id: friendId,
-          p_amount_minor: input.amountMinor,
-          p_currency: input.currency.toUpperCase(),
-          p_settlement_date: input.settlementDate || new Date().toISOString(),
-          p_notes: input.notes?.trim() || null,
-          p_payer_id: input.fromUserId,
-          p_recipient_id: input.toUserId,
-        });
+        const { data, error } = await (supabase.rpc as any)('record_direct_settlement', rpcArgs);
 
         if (!error && data) {
           return data as DbSettlement;
         }
-      } catch {
+        // A cross-currency settlement must not silently fall back to an unconverted write
+        if (error && 'applied_currency' in conversion) {
+          throw new Error(error.message);
+        }
+      } catch (err) {
+        if ('applied_currency' in conversion) throw err;
         // Fallback to direct table write if RPC not yet migrated
       }
 
@@ -103,7 +175,7 @@ class SettlementService {
           currency: input.currency.toUpperCase(),
           notes: input.notes?.trim() || null,
           settlement_date: input.settlementDate || new Date().toISOString(),
-          exchange_rate: input.exchangeRate || 1.0,
+          ...conversionColumns(input),
           created_by: user.id,
         })
         .select()
@@ -127,7 +199,7 @@ class SettlementService {
           currency: input.currency.toUpperCase(),
           notes: input.notes?.trim() || null,
           settlement_date: input.settlementDate || new Date().toISOString(),
-          exchange_rate: input.exchangeRate || 1.0,
+          ...conversionColumns(input),
           created_by: user.id,
         })
         .select()

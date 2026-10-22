@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CurrencyDisplay } from '@/components/currency/currency-display';
+import { ConvertedAmount } from '@/components/currency/converted-amount';
 import { formatRelativeDate, formatDate } from '@/lib/date';
 import type { Expense } from '@/domain/models/types';
 import { cn } from '@/lib/utils';
@@ -208,11 +209,13 @@ export function ExpenseRow({
 
       {/* Amount and user split preview */}
       <div className="flex flex-col items-end gap-1 shrink-0 ml-3 text-right">
-        <CurrencyDisplay
+        {/* Original amount first; "≈" in the display currency at the expense date's rate */}
+        <ConvertedAmount
           amountMinor={expense.originalAmountMinor}
           currency={expense.originalCurrency}
+          date={expense.expenseDate.slice(0, 10)}
           size="md"
-          className="text-foreground font-bold"
+          className="items-end text-foreground font-bold"
         />
         {userPerspectiveText}
       </div>

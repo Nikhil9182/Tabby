@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
   Download,
   Calendar,
@@ -44,13 +43,12 @@ import {
   useGroups,
   useCurrency,
   useUsers,
+  useRates,
 } from '@/hooks';
 import { formatMoney, toMajorUnits, toMinorUnits } from '@/domain/money/money';
-import { exchangeRateService } from '@/services/exchange-rates/exchange-rate-service';
+import { convertMinor, findQuote } from '@/domain/money/conversion';
 import { formatDate } from '@/lib/date';
 import type { Expense } from '@/domain/models/types';
-
-const NO_RATES: Record<string, number> = {};
 
 const CHART_COLORS = [
   '#3b82f6', // blue
@@ -67,8 +65,8 @@ export function ReportsPage() {
   const { user } = useCurrentUser();
   const currentUserId = user?.id || 'current_user';
 
-  const { defaultCurrency, setDefaultCurrency } = useCurrency();
-  const [reportingCurrency, setReportingCurrency] = useState(defaultCurrency);
+  // Reports use the one saved display currency; changing it here changes it everywhere
+  const { defaultCurrency: reportingCurrency, setDefaultCurrency: setReportingCurrency } = useCurrency();
   const [period, setPeriod] = useState<'this-month' | 'last-month' | 'last-3-months' | 'all-time'>('this-month');
 
   const { expenses, splits, isLoading } = useExpenses();
@@ -117,32 +115,34 @@ export function ReportsPage() {
 
   const reportCurrency = reportingCurrency.toUpperCase();
 
-  // Latest rates from each foreign currency into the report currency
-  const foreignCurrencies = useMemo(
-    () =>
-      [...new Set(expenses.map((e) => (e.originalCurrency || reportCurrency).toUpperCase()))]
-        .filter((c) => c !== reportCurrency)
-        .sort(),
-    [expenses, reportCurrency]
+  // Historical policy: each expense converts at its own date's rate (ARCHITECTURE.md §8.1)
+  const today = new Date().toISOString().slice(0, 10);
+  const rateDateFor = useCallback(
+    (e: Expense) => {
+      const day = e.expenseDate.slice(0, 10);
+      return day < today ? day : undefined; // today's rate isn't published yet: use latest
+    },
+    [today]
   );
 
-  const { data: rates = NO_RATES } = useQuery<Record<string, number>>({
-    queryKey: ['report-rates', reportCurrency, foreignCurrencies.join(',')],
-    queryFn: async () => {
-      const entries = await Promise.all(
-        foreignCurrencies.map(async (c) => {
-          try {
-            return [c, (await exchangeRateService.getLatestRate(c, reportCurrency)).rate] as const;
-          } catch {
-            return [c, 0] as const;
-          }
-        })
-      );
-      return Object.fromEntries(entries.filter(([, rate]) => rate > 0));
-    },
-    enabled: foreignCurrencies.length > 0,
-    staleTime: 1000 * 60 * 60 * 12,
-  });
+  /** A stored snapshot is reused when it holds a real rate into the report currency. */
+  const usableSnapshot = useCallback(
+    (e: Expense) =>
+      !!e.exchangeRate &&
+      e.reportingCurrency?.toUpperCase() === reportCurrency &&
+      e.originalCurrency.toUpperCase() !== reportCurrency &&
+      !['identity', 'unavailable'].includes(e.exchangeRateSource || 'identity'),
+    [reportCurrency]
+  );
+
+  const ratePairs = useMemo(
+    () =>
+      expenses
+        .filter((e) => !e.deletedAt && e.originalCurrency.toUpperCase() !== reportCurrency && !usableSnapshot(e))
+        .map((e) => ({ from: e.originalCurrency, to: reportCurrency, date: rateDateFor(e) })),
+    [expenses, reportCurrency, usableSnapshot, rateDateFor]
+  );
+  const { rates, isLoading: isLoadingRates, failures: rateFailures, retry: retryRates } = useRates(ratePairs);
 
   // Your share of an expense, converted to the report currency. null = no rate available.
   const myShareInReportCurrency = useCallback(
@@ -153,11 +153,12 @@ export function ReportsPage() {
           : (splits[e.id] || []).find((s) => s.userId === currentUserId)?.shareMinor ?? 0;
       const currency = (e.originalCurrency || reportCurrency).toUpperCase();
       if (share === 0 || currency === reportCurrency) return share;
-      const rate = rates[currency];
-      if (!rate) return null;
-      return toMinorUnits(toMajorUnits(share, currency) * rate, reportCurrency);
+      if (usableSnapshot(e)) return convertMinor(share, currency, reportCurrency, e.exchangeRate!);
+      const quote = findQuote(rates, currency, reportCurrency, rateDateFor(e));
+      if (!quote) return null;
+      return convertMinor(share, currency, reportCurrency, quote.rate);
     },
-    [splits, currentUserId, reportCurrency, rates]
+    [splits, currentUserId, reportCurrency, rates, usableSnapshot, rateDateFor]
   );
 
   // Calculations for Summary Cards
@@ -560,9 +561,19 @@ export function ReportsPage() {
             <Info className="h-4 w-4 text-primary shrink-0" />
             <span>
               Amounts show your share of each expense. Expenses in other currencies are converted
-              to {reportCurrency} at today&apos;s exchange rate.
-              {summaryStats.unconverted.length > 0 &&
-                ` ${summaryStats.unconverted.join(', ')} expenses are left out until a rate is available.`}
+              to {reportCurrency} at the exchange rate on the day of each expense. The original
+              amounts are never changed.
+              {isLoadingRates && ' Loading exchange rates…'}
+              {!isLoadingRates && summaryStats.unconverted.length > 0 && (
+                <>
+                  {` ${summaryStats.unconverted.join(', ')} expenses are left out because no rate is available. `}
+                  {rateFailures.length > 0 && (
+                    <button type="button" onClick={retryRates} className="font-semibold text-primary underline">
+                      Retry
+                    </button>
+                  )}
+                </>
+              )}
             </span>
           </div>
         </div>

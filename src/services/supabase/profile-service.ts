@@ -114,6 +114,40 @@ class ProfileService {
   }
 
   /**
+   * The signed-in user's display-currency preference, or null if unset.
+   * Returns null (not an error) before the multi-currency migration has run.
+   */
+  async getPreferredCurrency(): Promise<string | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data, error } = await (supabase
+      .from('profiles') as any)
+      .select('preferred_currency')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Could not read preferred currency:', error.message);
+      return null;
+    }
+    return data?.preferred_currency || null;
+  }
+
+  /** Saves the display-currency preference. Never touches any expense. */
+  async setPreferredCurrency(currency: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await (supabase
+      .from('profiles') as any)
+      .update({ preferred_currency: currency.trim().toUpperCase(), updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    if (error) throw new Error(error.message);
+  }
+
+  /**
    * Fetches every profile the current user may see. RLS limits this to
    * yourself, your friends and people you share a group with.
    */

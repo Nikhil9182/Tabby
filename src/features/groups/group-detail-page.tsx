@@ -36,6 +36,8 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { CurrencyDisplay } from '@/components/currency/currency-display';
+import { BalanceAmount } from '@/components/currency/converted-amount';
+import { bagCurrencies, EMPTY_BAG, type MoneyBag } from '@/domain/money/conversion';
 import { CurrencySelector } from '@/components/currency/currency-selector';
 import { ExpenseRow } from '@/components/expenses/expense-row';
 import { SettlementRow } from '@/components/settlements/settlement-row';
@@ -49,6 +51,7 @@ import {
   useExpenses,
   useSettlements,
   useAuth,
+  useDisplayConversion,
 } from '@/hooks';
 import { formatDate } from '@/lib/date';
 import type { User, MemberRole, PairwiseBalance } from '@/domain/models/types';
@@ -145,8 +148,17 @@ export function GroupDetailPage() {
   );
 
   // Current user net balance in this group
-  const myBalance = balances?.balances?.get(currentUserId);
-  const myNetMinor = myBalance?.netBalance ?? 0;
+  // Balances stay per currency; shown in the display currency at the latest rate
+  const conversion = useDisplayConversion(balances?.currencies ?? []);
+  const myNetBag = balances?.balances?.get(currentUserId)?.netByCurrency ?? EMPTY_BAG;
+  const signOf = (bag: MoneyBag): number => {
+    const { totalMinor } = conversion.convert(bag);
+    if (totalMinor !== null) return Math.sign(totalMinor);
+    const values = bagCurrencies(bag).map((c) => bag[c]);
+    return values.every((v) => v > 0) ? 1 : values.every((v) => v < 0) ? -1 : 0;
+  };
+  const mySign = signOf(myNetBag);
+  const myIsSettled = bagCurrencies(myNetBag).length === 0;
 
   // Is user owner?
   const myMembership = members.find((m) => m.userId === currentUserId);
@@ -281,24 +293,24 @@ export function GroupDetailPage() {
       {/* Your balance + primary actions (Splitwise-style summary) */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="min-w-0">
-          {myNetMinor === 0 ? (
+          {myIsSettled ? (
             <p className="flex items-center gap-1.5 text-base font-semibold text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               You are all settled up
             </p>
           ) : (
-            <p className="text-base font-semibold text-foreground">
-              {myNetMinor > 0 ? 'You are owed ' : 'You owe '}
-              <CurrencyDisplay
-                amountMinor={Math.abs(myNetMinor)}
-                currency={groupCurrency}
-                size="md"
-                className={cn(
+            <div className="flex items-baseline gap-1.5 text-base font-semibold text-foreground">
+              <span>{mySign > 0 ? 'You are owed' : mySign < 0 ? 'You owe' : 'Your balance'}</span>
+              <BalanceAmount
+                bag={myNetBag}
+                conversion={conversion}
+                mode={mySign === 0 ? 'signed' : 'abs'}
+                amountClassName={cn(
                   'font-black',
-                  myNetMinor > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                  mySign > 0 ? 'text-emerald-600 dark:text-emerald-400' : mySign < 0 ? 'text-rose-600 dark:text-rose-400' : ''
                 )}
               />
-            </p>
+            </div>
           )}
         </div>
 
@@ -409,8 +421,8 @@ export function GroupDetailPage() {
                   const u = userMap.get(member.userId);
                   const isYou = member.userId === currentUserId || member.userId === 'user_self' || member.userId === 'current_user';
                   const name = isYou ? 'You' : getUserName(member.userId);
-                  const userBal = balances?.balances?.get(member.userId);
-                  const net = userBal?.netBalance ?? 0;
+                  const netBag = balances?.balances?.get(member.userId)?.netByCurrency ?? EMPTY_BAG;
+                  const net = signOf(netBag);
 
                   return (
                     <div
@@ -432,16 +444,16 @@ export function GroupDetailPage() {
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <CurrencyDisplay
-                          amountMinor={net}
-                          currency={groupCurrency}
-                          colorize
-                          showSign
-                          size="md"
-                        />
+                      <div className="text-right flex flex-col items-end">
+                        <BalanceAmount bag={netBag} conversion={conversion} mode="signed" colorize className="items-end" />
                         <p className="text-xs text-muted-foreground">
-                          {net > 0 ? 'is owed' : net < 0 ? 'owes' : 'settled up'}
+                          {bagCurrencies(netBag).length === 0
+                            ? 'settled up'
+                            : net > 0
+                              ? 'is owed'
+                              : net < 0
+                                ? 'owes'
+                                : 'mixed currencies'}
                         </p>
                       </div>
                     </div>

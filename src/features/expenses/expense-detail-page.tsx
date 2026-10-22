@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CurrencyDisplay } from '@/components/currency/currency-display';
+import { ConvertedAmount } from '@/components/currency/converted-amount';
 import {
   useExpense,
   useExpenses,
@@ -106,10 +107,13 @@ export function ExpenseDetailPage() {
   // Category
   const category = categories.find((c) => c.id === expense.categoryId);
 
-  // Currency conversion info
-  const isDifferentCurrency =
-    expense.reportingCurrency &&
-    expense.reportingCurrency.toUpperCase() !== expense.originalCurrency.toUpperCase();
+  // A stored conversion snapshot is only shown when it holds a real rate
+  const hasRateSnapshot =
+    !!expense.reportingCurrency &&
+    expense.reportingCurrency.toUpperCase() !== expense.originalCurrency.toUpperCase() &&
+    expense.reportingAmountMinor !== undefined &&
+    !!expense.exchangeRate &&
+    !['identity', 'unavailable'].includes(expense.exchangeRateSource || 'identity');
 
   const handleDelete = async () => {
     try {
@@ -189,16 +193,19 @@ export function ExpenseDetailPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Total Amount
               </span>
-              <CurrencyDisplay
+              {/* Recorded amount is the record; the converted line uses the expense date's rate */}
+              <ConvertedAmount
                 amountMinor={expense.originalAmountMinor}
                 currency={expense.originalCurrency}
+                date={expense.expenseDate.slice(0, 10)}
                 size="xl"
-                className="font-black text-foreground"
+                className="items-start sm:items-end font-black text-foreground"
               />
-              {isDifferentCurrency && expense.reportingAmountMinor && (
+              {hasRateSnapshot && (
                 <span className="text-xs text-muted-foreground">
-                  ≈ {formatMoney(expense.reportingAmountMinor, expense.reportingCurrency!)}
-                  {expense.exchangeRate && ` (Rate: ${expense.exchangeRate.toFixed(4)})`}
+                  Saved when recorded: {formatMoney(expense.reportingAmountMinor!, expense.reportingCurrency!)} at 1{' '}
+                  {expense.originalCurrency} = {expense.exchangeRate} {expense.reportingCurrency}
+                  {expense.exchangeRateDate && ` (rate for ${formatDate(expense.exchangeRateDate, 'd MMM yyyy')})`}
                 </span>
               )}
             </div>

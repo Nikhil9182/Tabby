@@ -4,6 +4,8 @@ export * from './use-expenses';
 export * from './use-groups';
 export * from './use-settlements';
 export * from './use-currency';
+export * from './use-settlement-conversion';
+export * from './use-settle-up';
 export * from './use-users';
 export * from './use-categories';
 export * from './use-theme';

@@ -29,12 +29,38 @@ import {
   useCurrentUser,
   useExpenses,
   useSettlements,
-  useCurrency,
   useFriends,
+  useDisplayConversion,
+  type UseDisplayConversionResult,
+  type RecordSettlementInput,
 } from '@/hooks';
-import { calculateDirectFriendBalance } from '@/domain/balances/balance-engine';
+import { useSettleUp } from '@/hooks/use-settle-up';
+import { calculateDirectFriendBalanceBag } from '@/domain/balances/balance-engine';
+import { bagCurrencies, bagSide, negateBag, type MoneyBag } from '@/domain/money/conversion';
 import { formatMoney } from '@/domain/money/money';
+import { BalanceAmount } from '@/components/currency/converted-amount';
+import { SettleUpFields } from '@/components/settlements/settle-up-fields';
+import type { Settlement } from '@/domain/models/types';
 import { cn } from '@/lib/utils';
+
+type BalanceDirection = 'settled' | 'owed' | 'owe' | 'mixed';
+
+/** Who owes whom overall. Uses the converted total; falls back to signs when a rate is missing. */
+function balanceDirection(net: MoneyBag, conversion: Pick<UseDisplayConversionResult, 'convert'>): BalanceDirection {
+  const currencies = bagCurrencies(net);
+  if (currencies.length === 0) return 'settled';
+  const { totalMinor } = conversion.convert(net);
+  if (totalMinor !== null && totalMinor !== 0) return totalMinor > 0 ? 'owed' : 'owe';
+  if (currencies.every((c) => net[c] > 0)) return 'owed';
+  if (currencies.every((c) => net[c] < 0)) return 'owe';
+  return 'mixed';
+}
+
+/** "Paid ₹4,500 → $50.00 off the USD balance" for cross-currency settlements. */
+function appliedNote(s: Settlement): string | null {
+  if (!s.appliedCurrency || s.appliedCurrency === s.currency || !s.appliedAmountMinor) return null;
+  return `${formatMoney(s.appliedAmountMinor, s.appliedCurrency)} off the ${s.appliedCurrency} balance`;
+}
 
 export function FriendsPage() {
   const navigate = useNavigate();
@@ -49,8 +75,6 @@ export function FriendsPage() {
   const { friends, isLoading: isLoadingFriends, addFriend, isAdding, refetch: refetchFriends } = useFriends();
   const { expenses, splits } = useExpenses();
   const { settlements, recordSettlement, isRecording } = useSettlements();
-  const { defaultCurrency } = useCurrency();
-  const curr = defaultCurrency || 'USD';
 
   // Group invitations from collaboration hook
   const { invitations, respond, cancelRequest, isBusy } = useCollaboration();
@@ -66,45 +90,40 @@ export function FriendsPage() {
 
   // Settlement Dialog State inside Friend Details
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
-  const [settleAmount, setSettleAmount] = useState('');
-  const [settleDate, setSettleDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [settleNotes, setSettleNotes] = useState('');
-  const [settleError, setSettleError] = useState<string | null>(null);
 
   const allSplitsList = useMemo(() => Object.values(splits).flat(), [splits]);
 
-  // Map each friend to their net direct balance
-  const friendSummaries = useMemo(() => {
-    return friends.map((friend) => {
-      const balance = calculateDirectFriendBalance(
-        currentUserId,
-        friend.id,
-        expenses,
-        allSplitsList,
-        settlements,
-        curr
-      );
+  // Each friend's direct balance, per currency (positive = they owe you)
+  const friendBags = useMemo(
+    () =>
+      friends.map((friend) => ({
+        friend,
+        net: calculateDirectFriendBalanceBag(currentUserId, friend.id, expenses, allSplitsList, settlements),
+      })),
+    [friends, currentUserId, expenses, allSplitsList, settlements]
+  );
 
-      // balance.amountMinor >= 0
-      // If fromUserId === currentUserId, current user owes friend
-      // If fromUserId === friend.id, friend owes current user
-      const isUserDebtor = balance.amountMinor > 0 && balance.fromUserId === currentUserId;
-      const isFriendDebtor = balance.amountMinor > 0 && balance.fromUserId === friend.id;
-      const isSettled = balance.amountMinor === 0;
+  // One rate load for every currency on the page (latest-rate policy)
+  const conversion = useDisplayConversion(friendBags.flatMap((f) => bagCurrencies(f.net)));
 
-      return {
-        id: friend.id,
-        name: friend.name || friend.email || 'Friend',
-        email: friend.email,
-        avatarUrl: friend.picture || friend.avatarUrl,
-        balance,
-        isUserDebtor,
-        isFriendDebtor,
-        isSettled,
-        amountMinor: balance.amountMinor,
-      };
-    });
-  }, [friends, currentUserId, expenses, allSplitsList, settlements, curr]);
+  const friendSummaries = useMemo(
+    () =>
+      friendBags.map(({ friend, net }) => {
+        const direction = balanceDirection(net, conversion);
+        return {
+          id: friend.id,
+          name: friend.name || friend.email || 'Friend',
+          email: friend.email,
+          avatarUrl: friend.picture || friend.avatarUrl,
+          net,
+          direction,
+          isUserDebtor: direction === 'owe',
+          isFriendDebtor: direction === 'owed',
+          isSettled: direction === 'settled',
+        };
+      }),
+    [friendBags, conversion]
+  );
 
   // Selected friend details
   const selectedFriend = useMemo(() => {
@@ -179,66 +198,18 @@ export function FriendsPage() {
     }
   };
 
-  // Open Settle Modal initialized with exact direct balance
   const handleOpenSettleModal = () => {
     if (!selectedFriend || selectedFriend.isSettled) return;
-    setSettleError(null);
-    const absDollars = selectedFriend.amountMinor / 100;
-    setSettleAmount(absDollars.toFixed(2));
-    setSettleDate(new Date().toISOString().slice(0, 10));
-    setSettleNotes('');
     setIsSettleModalOpen(true);
-  };
-
-  // Confirm settlement handler
-  const handleConfirmSettlement = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedFriend || selectedFriend.isSettled) return;
-    setSettleError(null);
-
-    const amountFloat = parseFloat(settleAmount);
-    if (isNaN(amountFloat) || amountFloat <= 0) {
-      setSettleError('Please enter a valid amount greater than 0.');
-      return;
-    }
-
-    const maxAmount = selectedFriend.amountMinor / 100;
-    if (amountFloat > maxAmount) {
-      setSettleError(`Settlement amount cannot exceed the outstanding balance of ${formatMoney(selectedFriend.amountMinor, curr)}.`);
-      return;
-    }
-
-    // Direction:
-    // If isUserDebtor: You owe friend -> You are payer, Friend is payee
-    // If isFriendDebtor: Friend owes you -> Friend is payer, You are payee
-    const payerId = selectedFriend.isUserDebtor ? currentUserId : selectedFriend.id;
-    const payeeId = selectedFriend.isUserDebtor ? selectedFriend.id : currentUserId;
-
-    try {
-      await recordSettlement({
-        friendId: selectedFriend.id,
-        contextType: 'direct',
-        fromUserId: payerId,
-        toUserId: payeeId,
-        amountMinor: Math.round(amountFloat * 100),
-        currency: curr,
-        settlementDate: new Date(settleDate).toISOString(),
-        notes: settleNotes.trim() || undefined,
-        createdBy: currentUserId,
-      });
-
-      setIsSettleModalOpen(false);
-      setMessage(`Settlement recorded! Direct balance with ${selectedFriend.name} has been updated.`);
-    } catch (err: unknown) {
-      setSettleError(err instanceof Error ? err.message : 'Failed to record settlement.');
-    }
   };
 
   // -------------------------------------------------------------
   // VIEW 1: FRIEND DETAILS VIEW (1-to-1 Direct Expenses & Settle Up)
   // -------------------------------------------------------------
   if (selectedFriend) {
-    const formattedAmount = formatMoney(selectedFriend.amountMinor, curr);
+    const balanceText = (
+      <BalanceAmount bag={selectedFriend.net} conversion={conversion} size="xl" className="inline-flex align-baseline" />
+    );
 
     return (
       <div className="space-y-6 pb-16 animate-in fade-in-50 duration-300">
@@ -325,25 +296,45 @@ export function FriendsPage() {
               <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Direct Net Balance
               </span>
-              <p
+              <div
                 className={cn(
                   'text-2xl sm:text-3xl font-black tracking-tight',
                   selectedFriend.isSettled && 'text-emerald-600 dark:text-emerald-400',
-                  !selectedFriend.isSettled && selectedFriend.isUserDebtor && 'text-rose-600 dark:text-rose-400',
-                  !selectedFriend.isSettled && selectedFriend.isFriendDebtor && 'text-emerald-600 dark:text-emerald-400'
+                  selectedFriend.isUserDebtor && 'text-rose-600 dark:text-rose-400',
+                  selectedFriend.isFriendDebtor && 'text-emerald-600 dark:text-emerald-400'
                 )}
               >
-                {selectedFriend.isSettled
-                  ? `You're all settled up with ${selectedFriend.name}`
-                  : selectedFriend.isUserDebtor
-                  ? `You owe ${selectedFriend.name} ${formattedAmount}`
-                  : `${selectedFriend.name} owes you ${formattedAmount}`}
-              </p>
+                {selectedFriend.direction === 'settled' && `You're all settled up with ${selectedFriend.name}`}
+                {selectedFriend.direction === 'owe' && (
+                  <>
+                    You owe {selectedFriend.name} {balanceText}
+                  </>
+                )}
+                {selectedFriend.direction === 'owed' && (
+                  <>
+                    {selectedFriend.name} owes you {balanceText}
+                  </>
+                )}
+                {selectedFriend.direction === 'mixed' && (
+                  <span className="text-foreground">You each owe the other in different currencies</span>
+                )}
+              </div>
+              {selectedFriend.direction === 'mixed' && (
+                <p className="text-sm font-semibold">
+                  {bagCurrencies(selectedFriend.net)
+                    .map((c) =>
+                      selectedFriend.net[c] > 0
+                        ? `${selectedFriend.name} owes you ${formatMoney(selectedFriend.net[c], c)}`
+                        : `you owe ${formatMoney(-selectedFriend.net[c], c)}`
+                    )
+                    .join(' · ')}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground font-medium">
                 {selectedFriend.isSettled
                   ? 'All direct expenses between the two of you are settled. Group expenses remain tracked in their groups.'
                   : selectedFriend.isUserDebtor
-                  ? `You can settle this ₹ amount directly with ${selectedFriend.name}.`
+                  ? `You can record a payment to ${selectedFriend.name} here.`
                   : `${selectedFriend.name} can pay you back and you can record the settlement here.`}
               </p>
             </div>
@@ -475,8 +466,18 @@ export function FriendsPage() {
                         </p>
                       </div>
                     </div>
-                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 shrink-0">
-                      {formatMoney(s.amountMinor, s.currency)}
+                    <span className="text-right shrink-0">
+                      <span className="block text-sm font-black text-emerald-600 dark:text-emerald-400">
+                        {formatMoney(s.amountMinor, s.currency)}
+                      </span>
+                      {appliedNote(s) && (
+                        <span
+                          className="block text-[11px] text-muted-foreground"
+                          title={s.exchangeRateDate ? `Rate for ${s.exchangeRateDate}, saved with the payment` : undefined}
+                        >
+                          {appliedNote(s)}
+                        </span>
+                      )}
                     </span>
                   </div>
                 );
@@ -487,134 +488,18 @@ export function FriendsPage() {
 
         {/* Settle Up Modal */}
         {isSettleModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in-50">
-            <div className="bg-card border border-border rounded-3xl max-w-md w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95">
-              <div className="flex items-center justify-between border-b pb-3 border-border/60">
-                <div>
-                  <h3 className="font-black text-lg text-foreground">Settle Up</h3>
-                  <p className="text-xs text-muted-foreground">Direct settlement with {selectedFriend.name}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsSettleModalOpen(false)}
-                  className="rounded-full h-8 w-8 p-0"
-                >
-                  &times;
-                </Button>
-              </div>
-
-              {settleError && (
-                <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs border border-destructive/20 flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{settleError}</span>
-                </div>
-              )}
-
-              {/* Clear Direction Banner: Who is paying whom */}
-              <div className="p-4 rounded-2xl bg-muted/50 border border-border flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Avatar className="h-8 w-8 text-xs font-bold">
-                    <AvatarFallback className="bg-primary/10 text-primary">
-                      {selectedFriend.isUserDebtor ? 'YOU' : selectedFriend.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-muted-foreground font-semibold uppercase">Payer</p>
-                    <p className="text-xs font-bold text-foreground truncate">
-                      {selectedFriend.isUserDebtor ? 'You' : selectedFriend.name}
-                    </p>
-                  </div>
-                </div>
-
-                <ArrowRight className="h-4 w-4 text-primary shrink-0" />
-
-                <div className="flex items-center gap-2 min-w-0 text-right justify-end">
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-muted-foreground font-semibold uppercase">Recipient</p>
-                    <p className="text-xs font-bold text-foreground truncate">
-                      {selectedFriend.isUserDebtor ? selectedFriend.name : 'You'}
-                    </p>
-                  </div>
-                  <Avatar className="h-8 w-8 text-xs font-bold">
-                    <AvatarFallback className="bg-emerald-500/10 text-emerald-600">
-                      {selectedFriend.isUserDebtor ? selectedFriend.name.slice(0, 2).toUpperCase() : 'YOU'}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-              </div>
-
-              <form onSubmit={handleConfirmSettlement} className="space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="settle-amount" className="text-xs font-semibold">
-                      Settlement Amount ({curr})
-                    </Label>
-                    <span className="text-[11px] text-muted-foreground">
-                      Max: {formatMoney(selectedFriend.amountMinor, curr)}
-                    </span>
-                  </div>
-                  <Input
-                    id="settle-amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max={(selectedFriend.amountMinor / 100).toFixed(2)}
-                    value={settleAmount}
-                    onChange={(e) => setSettleAmount(e.target.value)}
-                    required
-                    className="rounded-xl font-bold text-base"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="settle-date" className="text-xs font-semibold">
-                    Settlement Date
-                  </Label>
-                  <Input
-                    id="settle-date"
-                    type="date"
-                    value={settleDate}
-                    onChange={(e) => setSettleDate(e.target.value)}
-                    required
-                    className="rounded-xl"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="settle-notes" className="text-xs font-semibold">
-                    Payment Method / Notes
-                  </Label>
-                  <Input
-                    id="settle-notes"
-                    placeholder="e.g. Paid via UPI, Cash, Venmo"
-                    value={settleNotes}
-                    onChange={(e) => setSettleNotes(e.target.value)}
-                    className="rounded-xl"
-                  />
-                </div>
-
-                <div className="pt-2 flex items-center justify-end gap-3 border-t border-border/60">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsSettleModalOpen(false)}
-                    className="rounded-xl"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isRecording}
-                    className="rounded-xl font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90 gap-1.5"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>{isRecording ? 'Recording...' : 'Confirm Settlement'}</span>
-                  </Button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <FriendSettleModal
+            friend={selectedFriend}
+            currentUserId={currentUserId}
+            fallbackCurrency={conversion.displayCurrency}
+            isRecording={isRecording}
+            onClose={() => setIsSettleModalOpen(false)}
+            onRecord={async (input) => {
+              await recordSettlement(input);
+              setIsSettleModalOpen(false);
+              setMessage(`Settlement recorded! Direct balance with ${selectedFriend.name} has been updated.`);
+            }}
+          />
         )}
       </div>
     );
@@ -711,8 +596,6 @@ export function FriendsPage() {
                   (f.email || '').toLowerCase().includes(search.toLowerCase())
               )
               .map((friend) => {
-                const formattedAmount = formatMoney(friend.amountMinor, curr);
-
                 return (
                   <div
                     key={friend.id}
@@ -743,17 +626,20 @@ export function FriendsPage() {
                       <span className="text-xs text-muted-foreground font-medium">Direct Balance</span>
                       <span
                         className={cn(
-                          'text-xs font-bold',
+                          'text-xs font-bold text-right',
                           friend.isSettled && 'text-emerald-600 dark:text-emerald-400',
-                          !friend.isSettled && friend.isUserDebtor && 'text-rose-600 dark:text-rose-400',
-                          !friend.isSettled && friend.isFriendDebtor && 'text-emerald-600 dark:text-emerald-400'
+                          friend.isUserDebtor && 'text-rose-600 dark:text-rose-400',
+                          friend.isFriendDebtor && 'text-emerald-600 dark:text-emerald-400'
                         )}
                       >
-                        {friend.isSettled
-                          ? 'Settled up'
-                          : friend.isUserDebtor
-                          ? `You owe ${formattedAmount}`
-                          : `${friend.name} owes you ${formattedAmount}`}
+                        {friend.direction === 'settled' && 'Settled up'}
+                        {friend.direction === 'mixed' && 'Balances in several currencies'}
+                        {(friend.direction === 'owe' || friend.direction === 'owed') && (
+                          <span className="inline-flex flex-col items-end">
+                            <span>{friend.direction === 'owe' ? 'You owe' : `${friend.name} owes you`}</span>
+                            <BalanceAmount bag={friend.net} conversion={conversion} size="sm" className="items-end" />
+                          </span>
+                        )}
                       </span>
                     </div>
                   </div>
@@ -887,6 +773,168 @@ export function FriendsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+interface FriendSettleModalProps {
+  friend: { id: string; name: string; net: MoneyBag; direction: BalanceDirection };
+  currentUserId: string;
+  fallbackCurrency: string;
+  isRecording: boolean;
+  onClose: () => void;
+  onRecord: (input: RecordSettlementInput) => Promise<void>;
+}
+
+/** Settle up with one friend. Each currency balance is settled on its own terms. */
+function FriendSettleModal({ friend, currentUserId, fallbackCurrency, isRecording, onClose, onRecord }: FriendSettleModalProps) {
+  const youOwe = bagCurrencies(bagSide(friend.net, 'negative')).length > 0;
+  const theyOwe = bagCurrencies(bagSide(friend.net, 'positive')).length > 0;
+  const [youPay, setYouPay] = useState(friend.direction === 'owe' || (youOwe && !theyOwe));
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in-50">
+      <div className="bg-card border border-border rounded-3xl max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 shadow-xl space-y-5 animate-in zoom-in-95">
+        <div className="flex items-center justify-between border-b pb-3 border-border/60">
+          <div>
+            <h3 className="font-black text-lg text-foreground">Settle Up</h3>
+            <p className="text-xs text-muted-foreground">Direct settlement with {friend.name}</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} className="rounded-full h-8 w-8 p-0" aria-label="Close">
+            &times;
+          </Button>
+        </div>
+
+        {/* Who is paying whom */}
+        <div className="p-4 rounded-2xl bg-muted/50 border border-border flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase">Payer</p>
+            <p className="text-xs font-bold text-foreground truncate">{youPay ? 'You' : friend.name}</p>
+          </div>
+          <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+          <div className="min-w-0 text-right">
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase">Recipient</p>
+            <p className="text-xs font-bold text-foreground truncate">{youPay ? friend.name : 'You'}</p>
+          </div>
+        </div>
+        {youOwe && theyOwe && (
+          <Button type="button" variant="outline" size="sm" onClick={() => setYouPay(!youPay)} className="w-full gap-1.5">
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            {youPay ? `Record ${friend.name} paying you instead` : 'Record you paying instead'}
+          </Button>
+        )}
+
+        <FriendSettleForm
+          key={youPay ? 'you-pay' : 'they-pay'}
+          friend={friend}
+          youPay={youPay}
+          currentUserId={currentUserId}
+          fallbackCurrency={fallbackCurrency}
+          isRecording={isRecording}
+          onClose={onClose}
+          onRecord={onRecord}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FriendSettleForm({
+  friend,
+  youPay,
+  currentUserId,
+  fallbackCurrency,
+  isRecording,
+  onClose,
+  onRecord,
+}: Omit<FriendSettleModalProps, 'friend'> & { friend: FriendSettleModalProps['friend']; youPay: boolean }) {
+  const [settleDate, setSettleDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [settleNotes, setSettleNotes] = useState('');
+  const [settleError, setSettleError] = useState<string | null>(null);
+
+  // What the payer owes the recipient, per currency
+  const debtBag = useMemo(
+    () => (youPay ? negateBag(bagSide(friend.net, 'negative')) : bagSide(friend.net, 'positive')),
+    [youPay, friend.net]
+  );
+  const settle = useSettleUp({ debtBag, settlementDate: settleDate, fallbackCurrency });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettleError(null);
+    if (!settle.submission) {
+      setSettleError(settle.error);
+      return;
+    }
+    try {
+      await onRecord({
+        friendId: friend.id,
+        contextType: 'direct',
+        fromUserId: youPay ? currentUserId : friend.id,
+        toUserId: youPay ? friend.id : currentUserId,
+        amountMinor: settle.submission.amountMinor,
+        currency: settle.submission.currency,
+        conversion: settle.submission.conversion,
+        settlementDate: new Date(settleDate).toISOString(),
+        notes: settleNotes.trim() || undefined,
+        createdBy: currentUserId,
+      });
+    } catch (err: unknown) {
+      setSettleError(err instanceof Error ? err.message : 'Failed to record settlement.');
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {settleError && (
+        <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs border border-destructive/20 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{settleError}</span>
+        </div>
+      )}
+
+      <SettleUpFields state={settle} idPrefix="friend-settle" />
+
+      <div className="space-y-1.5">
+        <Label htmlFor="settle-date" className="text-xs font-semibold">
+          Settlement Date
+        </Label>
+        <Input
+          id="settle-date"
+          type="date"
+          value={settleDate}
+          onChange={(e) => setSettleDate(e.target.value)}
+          required
+          className="rounded-xl"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="settle-notes" className="text-xs font-semibold">
+          Payment Method / Notes
+        </Label>
+        <Input
+          id="settle-notes"
+          placeholder="e.g. Paid via UPI, Cash, Venmo"
+          value={settleNotes}
+          onChange={(e) => setSettleNotes(e.target.value)}
+          className="rounded-xl"
+        />
+      </div>
+
+      <div className="pt-2 flex items-center justify-end gap-3 border-t border-border/60">
+        <Button type="button" variant="outline" onClick={onClose} className="rounded-xl">
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={isRecording || !settle.submission}
+          className="rounded-xl font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90 gap-1.5"
+        >
+          <Check className="h-4 w-4" />
+          <span>{isRecording ? 'Recording...' : 'Confirm Settlement'}</span>
+        </Button>
+      </div>
+    </form>
   );
 }
 

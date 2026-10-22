@@ -1,7 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import type { Settlement } from '@/domain/models/types';
-import { settlementService } from '@/services/supabase/settlement-service';
+import {
+  settlementService,
+  toSettlement,
+  type SettlementConversionSnapshot,
+} from '@/services/supabase/settlement-service';
 
 export interface RecordSettlementInput {
   groupId?: string;
@@ -15,7 +19,8 @@ export interface RecordSettlementInput {
   settlementDate?: string;
   notes?: string;
   createdBy?: string;
-  exchangeRate?: number;
+  /** Required when paying in a currency other than the debt's (see useSettlementConversion). */
+  conversion?: SettlementConversionSnapshot;
 }
 
 export const recordSettlementSchema = z
@@ -68,25 +73,7 @@ export function useSettlements(filter?: string | SettlementFilters): UseSettleme
     queryKey,
     queryFn: async (): Promise<Settlement[]> => {
       const raw = await settlementService.getSettlements(groupId, contextType);
-      return raw.map((s) => ({
-        id: s.id,
-        contextType: (s.context_type as any) || (s.group_id ? 'group' : 'direct'),
-        friendshipId: s.friendship_id || undefined,
-        sourceId: s.group_id || s.friendship_id || 'direct',
-        groupId: s.group_id || undefined,
-        fromUserId: s.from_user_id,
-        toUserId: s.to_user_id,
-        amountMinor: s.amount_minor,
-        currency: s.currency,
-        settlementDate: s.settlement_date,
-        notes: s.notes || undefined,
-        exchangeRate: s.exchange_rate || 1.0,
-        exchangeRateDate: s.exchange_rate_date || undefined,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at,
-        createdBy: s.created_by,
-        deletedAt: s.deleted_at,
-      }));
+      return raw.map(toSettlement);
     },
   });
 
@@ -122,26 +109,11 @@ export function useSettlements(filter?: string | SettlementFilters): UseSettleme
         currency: normalizedCurrency,
         notes: input.notes,
         settlementDate: normalizedDate,
-        exchangeRate: input.exchangeRate,
+        conversion: input.conversion,
       });
 
-      return {
-        id: dbSettlement.id,
-        contextType: (dbSettlement.context_type as any) || normalizedContextType,
-        friendshipId: dbSettlement.friendship_id || undefined,
-        sourceId: dbSettlement.group_id || dbSettlement.friendship_id || 'direct',
-        groupId: dbSettlement.group_id || undefined,
-        fromUserId: dbSettlement.from_user_id,
-        toUserId: dbSettlement.to_user_id,
-        amountMinor: dbSettlement.amount_minor,
-        currency: dbSettlement.currency,
-        settlementDate: dbSettlement.settlement_date,
-        notes: dbSettlement.notes || undefined,
-        exchangeRate: dbSettlement.exchange_rate || 1.0,
-        createdAt: dbSettlement.created_at,
-        updatedAt: dbSettlement.updated_at,
-        createdBy: dbSettlement.created_by,
-      };
+      const mapped = toSettlement(dbSettlement);
+      return { ...mapped, contextType: (dbSettlement as any).context_type ? mapped.contextType : normalizedContextType };
     },
     onSuccess: (_data, input) => {
       void queryClient.invalidateQueries({ queryKey: ['settlements'] });

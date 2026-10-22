@@ -61,6 +61,7 @@ import {
   validateSplit,
 } from '@/domain/splits/split-calculator';
 import type { SplitType, ExpenseSplit } from '@/domain/models/types';
+import { currencyService } from '@/services/currency/currency-service';
 import { cn } from '@/lib/utils';
 
 interface ExpenseFormProps {
@@ -129,7 +130,8 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     watch,
     setValue,
     reset,
-    formState: { errors },
+    getValues,
+    formState: { errors, dirtyFields },
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
@@ -160,6 +162,86 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const { members: groupMemberships } = useGroup(
     trackingMode === 'group' && selectedGroupId ? selectedGroupId : ''
   );
+
+  // The currency balances are reported in: the group's, or the user's display currency
+  const contextCurrency =
+    (trackingMode === 'group' ? groups.find((g) => g.id === selectedGroupId)?.currency : undefined) || defaultCurrency;
+
+  // Until the user picks a currency themselves, follow the context (never after an amount is typed)
+  useEffect(() => {
+    if (isEditing || dirtyFields.currency || getValues('amount')) return;
+    if (getValues('currency') !== contextCurrency) setValue('currency', contextCurrency);
+  }, [isEditing, dirtyFields.currency, contextCurrency, getValues, setValue]);
+
+  // When the transaction currency changes under a typed amount, the number is kept
+  // as-is and we say so; converting is an explicit action.
+  const [currencyChange, setCurrencyChange] = useState<{ from: string; to: string } | null>(null);
+  const [isConvertingAmount, setIsConvertingAmount] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
+
+  const handleTransactionCurrencyChange = (next: string, onChange: (value: string) => void) => {
+    const previous = getValues('currency');
+    onChange(next);
+    setConvertError(null);
+    if (getValues('amount') && previous && previous.toUpperCase() !== next.toUpperCase()) {
+      setCurrencyChange({ from: previous.toUpperCase(), to: next.toUpperCase() });
+    } else {
+      setCurrencyChange(null);
+    }
+  };
+
+  const convertTypedAmount = async () => {
+    if (!currencyChange) return;
+    setIsConvertingAmount(true);
+    setConvertError(null);
+    try {
+      const fromMinor = parseMoney(getValues('amount'), currencyChange.from);
+      const converted = await currencyService.convertAmount(fromMinor, currencyChange.from, currencyChange.to);
+      setValue('amount', String(toMajorUnits(converted.amountMinor, currencyChange.to)), { shouldDirty: true });
+      setCurrencyChange(null);
+    } catch (err) {
+      setConvertError(err instanceof Error ? err.message : 'Exchange rate unavailable');
+    } finally {
+      setIsConvertingAmount(false);
+    }
+  };
+
+  /**
+   * Snapshot of the expense converted into the context currency at the expense
+   * date's rate. No rate → an honest identity snapshot marked 'unavailable'.
+   */
+  const buildRateSnapshot = async (amountMinor: number, currency: string, expenseDay: string) => {
+    const from = currency.toUpperCase();
+    const to = contextCurrency.toUpperCase();
+    if (from === to) {
+      return {
+        reportingCurrency: from,
+        exchangeRate: 1,
+        exchangeRateDate: expenseDay,
+        exchangeRateSource: 'identity',
+        reportingAmountMinor: amountMinor,
+      };
+    }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const converted = await currencyService.convertAmount(amountMinor, from, to, expenseDay < today ? expenseDay : undefined);
+      return {
+        reportingCurrency: to,
+        exchangeRate: converted.quote.rate,
+        exchangeRateDate: converted.quote.effectiveDate,
+        exchangeRateSource: converted.quote.source === 'cache' ? 'cache' : 'frankfurter',
+        reportingAmountMinor: converted.amountMinor,
+      };
+    } catch {
+      return {
+        reportingCurrency: from,
+        exchangeRate: 1,
+        exchangeRateDate: expenseDay,
+        exchangeRateSource: 'unavailable',
+        reportingAmountMinor: amountMinor,
+      };
+    }
+  };
 
   // Auto-select first friend or first group if none selected
   useEffect(() => {
@@ -525,6 +607,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
     try {
       const expenseDateISO = new Date(data.expenseDate).toISOString();
+      const rateSnapshot = await buildRateSnapshot(totalAmountMinor, data.currency, data.expenseDate.slice(0, 10));
 
       if (trackingMode === 'direct') {
         if (!selectedFriendId) {
@@ -546,6 +629,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             sourceId: selectedFriendId,
             originalAmountMinor: totalAmountMinor,
             originalCurrency: data.currency,
+            ...rateSnapshot,
             splitType,
             participants: directParticipants,
             expenseDate: expenseDateISO,
@@ -559,6 +643,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             originalAmountMinor: totalAmountMinor,
             currency: data.currency,
             originalCurrency: data.currency,
+            ...rateSnapshot,
             paidBy: data.paidBy,
             sourceType: 'direct',
             contextType: 'direct',
@@ -592,6 +677,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             sourceId: selectedGroupId,
             originalAmountMinor: totalAmountMinor,
             originalCurrency: data.currency,
+            ...rateSnapshot,
             splitType,
             participants: selectedParticipants,
             expenseDate: expenseDateISO,
@@ -605,6 +691,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             originalAmountMinor: totalAmountMinor,
             currency: data.currency,
             originalCurrency: data.currency,
+            ...rateSnapshot,
             paidBy: data.paidBy,
             sourceType: 'group',
             contextType: 'group',
@@ -772,12 +859,35 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                   render={({ field }) => (
                     <CurrencySelector
                       value={field.value}
-                      onChange={field.onChange}
+                      onChange={(next) => handleTransactionCurrencyChange(next, field.onChange)}
                     />
                   )}
                 />
               </div>
             </div>
+
+            {currencyChange && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                <span>
+                  Currency changed from {currencyChange.from}. The amount was kept as {watchedAmountStr} {currencyChange.to}, not converted.
+                </span>
+                <span className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={convertTypedAmount}
+                    disabled={isConvertingAmount}
+                  >
+                    {isConvertingAmount ? 'Converting…' : `Convert from ${currencyChange.from}`}
+                  </Button>
+                  <Button type="button" size="xs" variant="ghost" onClick={() => setCurrencyChange(null)}>
+                    Keep
+                  </Button>
+                </span>
+                {convertError && <span className="w-full text-rose-600 dark:text-rose-400">{convertError}</span>}
+              </div>
+            )}
 
             {/* Date & Category in one row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1044,7 +1154,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                               <span className="font-semibold">
                                 {memberSplit
                                   ? formatMoney(memberSplit.shareMinor, watchedCurrency)
-                                  : '₹0.00'}
+                                  : formatMoney(0, watchedCurrency)}
                               </span>
                             </div>
                           )}
@@ -1091,7 +1201,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                               <span className="text-xs font-semibold w-20 text-right">
                                 {memberSplit
                                   ? formatMoney(memberSplit.shareMinor, watchedCurrency)
-                                  : '₹0.00'}
+                                  : formatMoney(0, watchedCurrency)}
                               </span>
                             </div>
                           )}
@@ -1119,7 +1229,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                               <span className="text-xs font-semibold w-20 text-right">
                                 {memberSplit
                                   ? formatMoney(memberSplit.shareMinor, watchedCurrency)
-                                  : '₹0.00'}
+                                  : formatMoney(0, watchedCurrency)}
                               </span>
                             </div>
                           )}

@@ -14,8 +14,11 @@ import {
   useSettlements,
   useCurrency,
   useUsers,
+  useDisplayConversion,
 } from '@/hooks';
 import { calculateGroupBalances } from '@/domain/balances/balance-engine';
+import { bagCurrencies, EMPTY_BAG, type MoneyBag } from '@/domain/money/conversion';
+import { BalanceAmount } from '@/components/currency/converted-amount';
 import type { ExpenseSplit } from '@/domain/models/types';
 
 export function GroupsPage() {
@@ -37,6 +40,20 @@ export function GroupsPage() {
   const allSplitsList = useMemo(() => {
     return Object.values(splits).flat() as ExpenseSplit[];
   }, [splits]);
+
+  // Your balance in each group, per currency (positive = owed to you)
+  const groupBags = useMemo(() => {
+    const map = new Map<string, MoneyBag>();
+    for (const group of groups) {
+      const groupExpenses = expenses.filter((e) => e.groupId === group.id || e.sourceId === group.id);
+      const groupSettlements = settlements.filter((s) => s.groupId === group.id || s.sourceId === group.id);
+      const computed = calculateGroupBalances(groupExpenses, allSplitsList, groupSettlements, group.currency || 'USD');
+      map.set(group.id, computed.balances.get(currentUserId)?.netByCurrency ?? EMPTY_BAG);
+    }
+    return map;
+  }, [groups, expenses, settlements, allSplitsList, currentUserId]);
+
+  const conversion = useDisplayConversion(Array.from(groupBags.values()).flatMap(bagCurrencies));
 
   const filteredGroups = useMemo(() => {
     let list = groups.filter((g) => !g.isArchived);
@@ -117,20 +134,17 @@ export function GroupsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredGroups.map((group) => {
             const groupExpenses = expenses.filter((e) => e.groupId === group.id || e.sourceId === group.id);
-            const groupSplits = allSplitsList.filter((s) => groupExpenses.some((e) => e.id === s.expenseId));
-            const groupSettlements = settlements.filter(
-              (s) => s.groupId === group.id || s.sourceId === group.id
-            );
-
-            const computed = calculateGroupBalances(
-              groupExpenses,
-              groupSplits,
-              groupSettlements,
-              group.currency || defaultCurrency
-            );
-
-            const myBalance = computed.balances.get(currentUserId);
-            const netBalanceMinor = myBalance?.netBalance ?? 0;
+            const net = groupBags.get(group.id) ?? EMPTY_BAG;
+            const converted = conversion.convert(net);
+            const values = bagCurrencies(net).map((c) => net[c]);
+            const netSign =
+              converted.totalMinor !== null
+                ? Math.sign(converted.totalMinor)
+                : values.every((v) => v > 0)
+                  ? 1
+                  : values.every((v) => v < 0)
+                    ? -1
+                    : 0;
 
             const groupMembers = (group.memberIds || [])
               .map((id) => users.find((u) => u.id === id))
@@ -142,7 +156,12 @@ export function GroupsPage() {
                 group={group}
                 members={groupMembers as any}
                 memberCount={group.memberIds?.length || 1}
-                netBalanceMinor={netBalanceMinor}
+                netSign={netSign}
+                balance={
+                  bagCurrencies(net).length > 0 ? (
+                    <BalanceAmount bag={net} conversion={conversion} size="sm" className="items-end" />
+                  ) : undefined
+                }
                 expenseCount={groupExpenses.length}
                 currency={group.currency || defaultCurrency}
                 onClick={() => navigate(`/groups/${group.id}`)}

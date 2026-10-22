@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 
 export function SettingsPage() {
   const { user, updateProfile, isUpdating } = useCurrentUser();
-  const { defaultCurrency, setDefaultCurrency } = useCurrency();
+  const { defaultCurrency, setDefaultCurrency, isSavingDefaultCurrency } = useCurrency();
   const { theme, setTheme } = useTheme();
   const { user: authUser, signIn, signOut, isAuthenticated } = useAuth();
   const { syncStatus, triggerSync, isSyncing } = useSync();
@@ -197,7 +197,7 @@ export function SettingsPage() {
           {/* Default Currency */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-              Default Currency
+              Display currency
             </label>
             <CurrencySelector
               value={defaultCurrency}
@@ -205,7 +205,9 @@ export function SettingsPage() {
               className="w-full"
             />
             <p className="text-xs text-muted-foreground">
-              Used when calculating aggregate dashboard balances and quick expenses.
+              Balances and totals are shown in this currency, converted at current exchange rates.
+              Your expenses always keep the currency they were recorded in.
+              {isSavingDefaultCurrency && ' Saving…'}
             </p>
           </div>
 

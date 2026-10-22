@@ -66,6 +66,12 @@ export interface UpdateExpenseInput {
   sourceId?: string;
   originalAmountMinor?: number;
   originalCurrency?: string;
+  /** Conversion snapshot, recomputed whenever amount, currency or date change. */
+  reportingCurrency?: string;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
+  exchangeRateSource?: string;
+  reportingAmountMinor?: number;
   splitType?: SplitType;
   participants?: string[];
   expenseDate?: string;
@@ -307,6 +313,11 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         description: input.description ?? existing.description,
         amountMinor: input.originalAmountMinor ?? existing.originalAmountMinor,
         currency: input.originalCurrency ?? existing.originalCurrency,
+        reportingCurrency: input.reportingCurrency,
+        exchangeRate: input.exchangeRate,
+        exchangeRateDate: input.exchangeRateDate,
+        exchangeRateSource: input.exchangeRateSource,
+        reportingAmountMinor: input.reportingAmountMinor,
         paidBy: input.paidBy ?? existing.paidBy,
         groupId: input.groupId ?? existing.groupId,
         sourceType: input.sourceType ?? existing.sourceType,

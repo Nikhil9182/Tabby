@@ -14,6 +14,38 @@ function toCategoryId(id?: string): string | null {
   return id && UUID_RE.test(id) ? id : null;
 }
 
+/**
+ * Conversion snapshot stored with an expense. A snapshot naming another currency
+ * without a real rate is replaced by an identity snapshot, never a fake 1.0 rate.
+ */
+function rateSnapshot(input: CreateExpenseServiceInput) {
+  const currency = input.currency.toUpperCase();
+  const reporting = (input.reportingCurrency || currency).toUpperCase();
+  const hasRealRate =
+    reporting !== currency &&
+    !!input.exchangeRate &&
+    input.exchangeRate > 0 &&
+    input.reportingAmountMinor !== undefined &&
+    !['identity', 'unavailable'].includes(input.exchangeRateSource || 'identity');
+
+  if (!hasRealRate) {
+    return {
+      reportingCurrency: currency,
+      exchangeRate: 1.0,
+      exchangeRateDate: input.exchangeRateDate || null,
+      exchangeRateSource: input.exchangeRateSource === 'unavailable' ? 'unavailable' : 'identity',
+      reportingAmountMinor: input.amountMinor,
+    };
+  }
+  return {
+    reportingCurrency: reporting,
+    exchangeRate: input.exchangeRate!,
+    exchangeRateDate: input.exchangeRateDate || null,
+    exchangeRateSource: input.exchangeRateSource!,
+    reportingAmountMinor: input.reportingAmountMinor!,
+  };
+}
+
 export interface ExpenseSplitInput {
   userId: string;
   shareMinor: number;
@@ -292,11 +324,11 @@ class ExpenseService {
           p_paid_by: input.paidBy,
           p_amount_minor: input.amountMinor,
           p_currency: input.currency.toUpperCase(),
-          p_reporting_currency: (input.reportingCurrency || input.currency).toUpperCase(),
-          p_exchange_rate: input.exchangeRate || 1.0,
-          p_exchange_rate_date: input.exchangeRateDate || null,
-          p_exchange_rate_source: input.exchangeRateSource || 'identity',
-          p_reporting_amount_minor: input.reportingAmountMinor ?? input.amountMinor,
+          p_reporting_currency: rateSnapshot(input).reportingCurrency,
+          p_exchange_rate: rateSnapshot(input).exchangeRate,
+          p_exchange_rate_date: rateSnapshot(input).exchangeRateDate,
+          p_exchange_rate_source: rateSnapshot(input).exchangeRateSource,
+          p_reporting_amount_minor: rateSnapshot(input).reportingAmountMinor,
           p_split_type: input.splitType || 'equal',
           p_expense_date: input.expenseDate || new Date().toISOString(),
           p_splits: input.splits.map((s) => ({
@@ -336,11 +368,11 @@ class ExpenseService {
           paid_by: input.paidBy,
           amount_minor: input.amountMinor,
           currency: input.currency.toUpperCase(),
-          reporting_currency: (input.reportingCurrency || input.currency).toUpperCase(),
-          exchange_rate: input.exchangeRate || 1.0,
-          exchange_rate_date: input.exchangeRateDate || null,
-          exchange_rate_source: input.exchangeRateSource || 'identity',
-          reporting_amount_minor: input.reportingAmountMinor ?? input.amountMinor,
+          reporting_currency: rateSnapshot(input).reportingCurrency,
+          exchange_rate: rateSnapshot(input).exchangeRate,
+          exchange_rate_date: rateSnapshot(input).exchangeRateDate,
+          exchange_rate_source: rateSnapshot(input).exchangeRateSource,
+          reporting_amount_minor: rateSnapshot(input).reportingAmountMinor,
           split_type: input.splitType || 'equal',
           expense_date: input.expenseDate || new Date().toISOString(),
           created_by: user.id,
@@ -379,11 +411,11 @@ class ExpenseService {
         p_paid_by: input.paidBy,
         p_amount_minor: input.amountMinor,
         p_currency: input.currency.toUpperCase(),
-        p_reporting_currency: (input.reportingCurrency || input.currency).toUpperCase(),
-        p_exchange_rate: input.exchangeRate || 1.0,
-        p_exchange_rate_date: input.exchangeRateDate || null,
-        p_exchange_rate_source: input.exchangeRateSource || 'identity',
-        p_reporting_amount_minor: input.reportingAmountMinor ?? input.amountMinor,
+        p_reporting_currency: rateSnapshot(input).reportingCurrency,
+        p_exchange_rate: rateSnapshot(input).exchangeRate,
+        p_exchange_rate_date: rateSnapshot(input).exchangeRateDate,
+        p_exchange_rate_source: rateSnapshot(input).exchangeRateSource,
+        p_reporting_amount_minor: rateSnapshot(input).reportingAmountMinor,
         p_split_type: input.splitType || 'equal',
         p_expense_date: input.expenseDate || new Date().toISOString(),
         p_splits: input.splits.map((s) => ({

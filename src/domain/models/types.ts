@@ -347,13 +347,21 @@ export interface Settlement {
   friendId?: string;
   fromUserId: string;
   toUserId: string;
+  /** What was actually paid, in `currency`. Never rewritten. */
   amountMinor: number;
   currency: Currency;
+  /**
+   * When paid in a currency other than the debt's: the amount it reduces, in
+   * `appliedCurrency`, converted once at recording time. Absent = applied as paid.
+   */
+  appliedCurrency?: Currency;
+  appliedAmountMinor?: number;
   settlementDate: string;
   notes?: string;
   note?: string;
   exchangeRate?: number;
   exchangeRateDate?: string;
+  exchangeRateSource?: string;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
@@ -371,11 +379,14 @@ export const settlementSchema: z.ZodType<Settlement> = z.object({
   toUserId: z.string().min(1, 'Recipient user ID (toUserId) is required'),
   amountMinor: z.number().int().positive('Settlement amount must be a positive integer in minor units'),
   currency: currencySchema,
+  appliedCurrency: currencySchema.optional(),
+  appliedAmountMinor: z.number().int().positive().optional(),
   settlementDate: isoTimestampSchema,
   notes: z.string().optional(),
   note: z.string().optional(),
   exchangeRate: z.number().positive().optional(),
   exchangeRateDate: isoTimestampSchema.optional(),
+  exchangeRateSource: z.string().optional(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
   createdBy: z.string().optional(),

@@ -59,12 +59,33 @@ export function isValidCurrencyCode(code: string): boolean {
  * @returns Multiplier representing 10^decimals.
  */
 export function getMinorUnitMultiplier(currency: string): number {
+  return Math.pow(10, getCurrencyDecimals(currency));
+}
+
+const intlDecimalsCache = new Map<string, number>();
+
+/**
+ * Minor-unit precision for a currency: CURRENCY_INFO first, then the runtime's
+ * ISO 4217 data via Intl, then 2.
+ */
+export function getCurrencyDecimals(currency: string): number {
   const upper = currency.toUpperCase();
   const info = CURRENCY_INFO[upper];
-  if (info !== undefined) {
-    return Math.pow(10, info.decimals);
+  if (info !== undefined) return info.decimals;
+
+  const cached = intlDecimalsCache.get(upper);
+  if (cached !== undefined) return cached;
+
+  let decimals = 2;
+  try {
+    decimals =
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: upper }).resolvedOptions()
+        .maximumFractionDigits ?? 2;
+  } catch {
+    // Not a currency Intl knows; keep the 2-decimal default
   }
-  return 100;
+  intlDecimalsCache.set(upper, decimals);
+  return decimals;
 }
 
 /**
@@ -115,8 +136,7 @@ export function toMinorUnits(majorAmount: number, currency: string): number {
  */
 export function formatMoney(amountMinor: number, currency: string, locale = 'en-US'): string {
   const upper = currency.toUpperCase();
-  const info = CURRENCY_INFO[upper];
-  const decimals = info !== undefined ? info.decimals : 2;
+  const decimals = getCurrencyDecimals(upper);
   const major = amountMinor / Math.pow(10, decimals);
 
   try {
@@ -158,9 +178,7 @@ export function parseMoney(input: string, currency: string): number {
     return 0;
   }
 
-  const upper = currency.toUpperCase();
-  const info = CURRENCY_INFO[upper];
-  const decimals = info !== undefined ? info.decimals : 2;
+  const decimals = getCurrencyDecimals(currency);
 
   let decSep = '.';
   const lastDot = str.lastIndexOf('.');
@@ -279,5 +297,7 @@ export function convertCurrency(
   }
   const fromMult = fromCurrency ? getMinorUnitMultiplier(fromCurrency) : 100;
   const toMult = toCurrency ? getMinorUnitMultiplier(toCurrency) : 100;
-  return Math.round((Math.round(amountMinor) * rate * toMult) / fromMult);
+  const scaled = (Math.round(amountMinor) * rate * toMult) / fromMult;
+  // Half away from zero, matching conversion.ts
+  return Math.sign(scaled) * Math.round(Math.abs(scaled));
 }

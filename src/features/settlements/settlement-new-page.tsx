@@ -8,17 +8,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { SettleUpFields } from "@/components/settlements/settle-up-fields";
 import { useSettlements } from "@/hooks/use-settlements";
+import { useExpenses } from "@/hooks/use-expenses";
 import { useUsers, useCurrentUser } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
+import { useCurrency } from "@/hooks/use-currency";
+import { useSettleUp } from "@/hooks/use-settle-up";
+import { calculateGroupBalances, calculatePairwiseBalanceBag } from "@/domain/balances/balance-engine";
+import { addToBag, bagSide, EMPTY_BAG, type MoneyBag } from "@/domain/money/conversion";
+import type { ExpenseSplit } from "@/domain/models/types";
 
 export function SettlementNewPage() {
   const navigate = useNavigate();
-  const { recordSettlement, isRecording } = useSettlements();
+  const { recordSettlement, isRecording, settlements } = useSettlements();
+  const { expenses, splits } = useExpenses();
   const { groups } = useGroups();
   const { users } = useUsers();
   const { user: currentUser } = useCurrentUser();
   const { user } = useAuth();
+  const { defaultCurrency } = useCurrency();
   const [searchParams] = useSearchParams();
 
   const groupId = searchParams.get("groupId") || undefined;
@@ -32,26 +41,61 @@ export function SettlementNewPage() {
   const currentId = currentUser?.id || user?.sub || "user_self";
   const paramFromUser = searchParams.get("fromUserId") || searchParams.get("from") || "";
   const paramToUser = searchParams.get("toUserId") || searchParams.get("to") || "";
-  const paramAmountMinor = searchParams.get("amountMinor") || searchParams.get("amount") || "";
-  const paramCurrency = searchParams.get("currency") || "USD";
+  const paramAmountMinor = parseInt(searchParams.get("amountMinor") || searchParams.get("amount") || "", 10);
+  const paramCurrency = searchParams.get("currency") || undefined;
   const returnTo = searchParams.get("returnTo");
-
-  const initialAmount = paramAmountMinor ? (parseInt(paramAmountMinor, 10) / 100).toFixed(2) : "";
 
   const [fromUser, setFromUser] = useState(paramFromUser || currentId);
   const [toUser, setToUser] = useState(paramToUser || "");
-  const [amountStr, setAmountStr] = useState(initialAmount || "");
-  const [currency, setCurrency] = useState(paramCurrency.toUpperCase());
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
+  const payerId = fromUser || currentId;
+  const allSplits = useMemo(() => Object.values(splits).flat() as ExpenseSplit[], [splits]);
+
+  // What the payer owes the recipient in this context, per currency
+  const debtBag: MoneyBag = useMemo(() => {
+    if (!payerId || !toUser || payerId === toUser) return EMPTY_BAG;
+
+    if (groupId) {
+      const group = groups.find((g) => g.id === groupId);
+      const gb = calculateGroupBalances(
+        groupId,
+        expenses.filter((e) => e.groupId === groupId),
+        allSplits,
+        settlements.filter((s) => s.groupId === groupId),
+        group?.currency || defaultCurrency
+      );
+      // Suggested (simplified) payments may route around pairwise debts
+      let bag: MoneyBag = EMPTY_BAG;
+      for (const d of gb.simplifiedDebts) {
+        if (d.fromUserId === payerId && d.toUserId === toUser) bag = addToBag(bag, d.currency, d.amountMinor);
+      }
+      return bag;
+    }
+
+    const direct = (contextType?: string, gid?: string) => contextType === "direct" || !gid;
+    return bagSide(
+      calculatePairwiseBalanceBag(
+        payerId,
+        toUser,
+        expenses.filter((e) => direct(e.contextType, e.groupId)),
+        allSplits,
+        settlements.filter((s) => direct(s.contextType, s.groupId))
+      ),
+      "positive"
+    );
+  }, [payerId, toUser, groupId, groups, expenses, allSplits, settlements, defaultCurrency]);
+
+  // Re-key the amount fields when the pair changes so stale amounts don't carry over
+  const pairKey = `${payerId}->${toUser}`;
+
   const payerName = useMemo(() => {
-    const id = fromUser || currentId;
-    if (id === currentId) return currentUser?.name || "You";
-    const found = users.find((u) => u.id === id);
+    if (payerId === currentId) return currentUser?.name || "You";
+    const found = users.find((u) => u.id === payerId);
     return found?.name || found?.email || "Payer";
-  }, [fromUser, currentId, currentUser, users]);
+  }, [payerId, currentId, currentUser, users]);
 
   const recipientName = useMemo(() => {
     if (!toUser) return "Select recipient";
@@ -60,67 +104,17 @@ export function SettlementNewPage() {
     return found?.name || found?.email || "Recipient";
   }, [toUser, currentId, currentUser, users]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-
-    const amountFloat = parseFloat(amountStr);
-    const payerId = fromUser || currentId;
-    if (!toUser.trim()) {
-      setFormError("Recipient user is required");
-      return;
-    }
-    if (payerId === toUser) {
-      setFormError("Payer and recipient cannot be the same user");
-      return;
-    }
-    if (isNaN(amountFloat) || amountFloat <= 0) {
-      setFormError("Please enter a valid amount greater than 0");
-      return;
-    }
-
-    const amountMinor = Math.round(amountFloat * 100);
-
-    try {
-      const isDirect = !groupId;
-      const otherUserId = payerId === currentId ? toUser.trim() : payerId;
-
-      await recordSettlement({
-        groupId: isDirect ? undefined : groupId,
-        friendId: isDirect ? otherUserId : undefined,
-        contextType: isDirect ? 'direct' : 'group',
-        fromUserId: payerId,
-        toUserId: toUser.trim(),
-        amountMinor,
-        currency: currency.toUpperCase(),
-        settlementDate: new Date(date).toISOString(),
-        notes: notes.trim() || undefined,
-        createdBy: currentId,
-      });
-
-      if (returnTo) {
-        navigate(returnTo);
-      } else if (groupId) {
-        navigate(`/groups/${groupId}?tab=balances`);
-      } else if (toUser && toUser !== currentId) {
-        navigate(`/friends?friendId=${toUser}`);
-      } else {
-        navigate("/settlements");
-      }
-    } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Failed to record settlement");
-    }
-  };
-
-  const handleCancel = () => {
+  const leave = () => {
     if (returnTo) {
       navigate(returnTo);
     } else if (groupId) {
       navigate(`/groups/${groupId}?tab=balances`);
     } else if (toUser && toUser !== currentId) {
       navigate(`/friends?friendId=${toUser}`);
+    } else if (payerId !== currentId) {
+      navigate(`/friends?friendId=${payerId}`);
     } else {
-      navigate(-1);
+      navigate("/settlements");
     }
   };
 
@@ -156,12 +150,7 @@ export function SettlementNewPage() {
               </div>
             </div>
 
-            <div className="flex flex-col items-center shrink-0 px-2">
-              <span className="text-xs font-black text-foreground">
-                {amountStr ? `${currency} ${amountStr}` : "—"}
-              </span>
-              <ArrowRight className="h-4 w-4 text-primary stroke-[2.5]" />
-            </div>
+            <ArrowRight className="h-4 w-4 text-primary stroke-[2.5] shrink-0" />
 
             <div className="flex items-center gap-2.5 min-w-0 text-right justify-end">
               <div className="min-w-0">
@@ -174,7 +163,7 @@ export function SettlementNewPage() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4">
             {formError && (
               <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 text-destructive text-xs border border-destructive/20">
                 <AlertCircle className="h-4 w-4 shrink-0" />
@@ -224,80 +213,158 @@ export function SettlementNewPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="amount" className="text-xs font-semibold">
-                  Amount
-                </Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="0.00"
-                  value={amountStr}
-                  onChange={(e) => setAmountStr(e.target.value)}
-                  className="rounded-xl"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="currency" className="text-xs font-semibold">
-                  Currency
-                </Label>
-                <Input
-                  id="currency"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-                  maxLength={3}
-                  placeholder="USD"
-                  className="rounded-xl uppercase font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="date" className="text-xs font-semibold">
-                Settlement Date
-              </Label>
-              <Input
-                id="date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="rounded-xl"
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="notes" className="text-xs font-semibold">
-                Notes (Optional)
-              </Label>
-              <Textarea
-                id="notes"
-                placeholder="e.g. Paid via UPI, Cash, Venmo, Bank Transfer"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                className="rounded-xl"
-              />
-            </div>
-
-            <div className="pt-4 flex items-center justify-end gap-3 border-t border-border/60">
-              <Button type="button" variant="outline" onClick={handleCancel} className="rounded-xl">
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isRecording} className="rounded-xl gap-2 font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90">
-                <Check className="h-4 w-4" />
-                {isRecording ? "Recording..." : "Confirm Settlement"}
-              </Button>
-            </div>
-          </form>
+            <SettlementAmountForm
+              key={pairKey}
+              debtBag={debtBag}
+              fallbackCurrency={paramCurrency || defaultCurrency}
+              initialCurrency={pairKey === `${paramFromUser}->${paramToUser}` ? paramCurrency : undefined}
+              initialAmountMinor={
+                pairKey === `${paramFromUser}->${paramToUser}` && paramAmountMinor > 0 ? paramAmountMinor : undefined
+              }
+              date={date}
+              setDate={setDate}
+              notes={notes}
+              setNotes={setNotes}
+              isRecording={isRecording}
+              onCancel={leave}
+              onSubmit={async (submission) => {
+                setFormError(null);
+                if (!toUser.trim()) {
+                  setFormError("Recipient user is required");
+                  return;
+                }
+                if (payerId === toUser) {
+                  setFormError("Payer and recipient cannot be the same user");
+                  return;
+                }
+                try {
+                  const isDirect = !groupId;
+                  const otherUserId = payerId === currentId ? toUser.trim() : payerId;
+                  await recordSettlement({
+                    groupId: isDirect ? undefined : groupId,
+                    friendId: isDirect ? otherUserId : undefined,
+                    contextType: isDirect ? "direct" : "group",
+                    fromUserId: payerId,
+                    toUserId: toUser.trim(),
+                    amountMinor: submission.amountMinor,
+                    currency: submission.currency,
+                    conversion: submission.conversion,
+                    settlementDate: new Date(date).toISOString(),
+                    notes: notes.trim() || undefined,
+                    createdBy: currentId,
+                  });
+                  leave();
+                } catch (err: unknown) {
+                  setFormError(err instanceof Error ? err.message : "Failed to record settlement");
+                }
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+interface SettlementAmountFormProps {
+  debtBag: MoneyBag;
+  fallbackCurrency: string;
+  initialCurrency?: string;
+  initialAmountMinor?: number;
+  date: string;
+  setDate: (value: string) => void;
+  notes: string;
+  setNotes: (value: string) => void;
+  isRecording: boolean;
+  onCancel: () => void;
+  onSubmit: (submission: NonNullable<ReturnType<typeof useSettleUp>["submission"]>) => Promise<void>;
+}
+
+function SettlementAmountForm({
+  debtBag,
+  fallbackCurrency,
+  initialCurrency,
+  initialAmountMinor,
+  date,
+  setDate,
+  notes,
+  setNotes,
+  isRecording,
+  onCancel,
+  onSubmit,
+}: SettlementAmountFormProps) {
+  const settle = useSettleUp({
+    debtBag,
+    settlementDate: date,
+    fallbackCurrency,
+    initialCurrency,
+    initialAmountMinor,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!settle.submission) {
+      setError(settle.error);
+      return;
+    }
+    await onSubmit(settle.submission);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 text-destructive text-xs border border-destructive/20">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <SettleUpFields state={settle} idPrefix="settlement" />
+
+      <div className="space-y-1.5">
+        <Label htmlFor="date" className="text-xs font-semibold">
+          Settlement Date
+        </Label>
+        <Input
+          id="date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="rounded-xl"
+          required
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="notes" className="text-xs font-semibold">
+          Notes (Optional)
+        </Label>
+        <Textarea
+          id="notes"
+          placeholder="e.g. Paid via UPI, Cash, Venmo, Bank Transfer"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          className="rounded-xl"
+        />
+      </div>
+
+      <div className="pt-4 flex items-center justify-end gap-3 border-t border-border/60">
+        <Button type="button" variant="outline" onClick={onCancel} className="rounded-xl">
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={isRecording || !settle.submission}
+          className="rounded-xl gap-2 font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90"
+        >
+          <Check className="h-4 w-4" />
+          {isRecording ? "Recording..." : "Confirm Settlement"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -15,7 +15,7 @@ import {
   type CreateGroupInput as SvcCreateGroupInput,
 } from '@/services/supabase/group-service';
 import { expenseService } from '@/services/supabase/expense-service';
-import { settlementService } from '@/services/supabase/settlement-service';
+import { settlementService, toSettlement } from '@/services/supabase/settlement-service';
 import { realtimeService } from '@/services/supabase/realtime-service';
 import {
   calculateGroupBalances,
@@ -204,22 +204,10 @@ export function useGroup(groupId: string) {
     queryFn: async (): Promise<Settlement[]> => {
       const rawSettlements = await settlementService.getSettlements(groupId);
       return rawSettlements.map((s) => ({
-        id: s.id,
-        sourceType: 'group',
+        ...toSettlement(s),
+        sourceType: 'group' as const,
         sourceId: s.group_id || groupId || 'group',
         groupId: s.group_id || groupId,
-        fromUserId: s.from_user_id,
-        toUserId: s.to_user_id,
-        amountMinor: s.amount_minor,
-        currency: s.currency,
-        settlementDate: s.settlement_date,
-        notes: s.notes || undefined,
-        exchangeRate: s.exchange_rate || 1.0,
-        exchangeRateDate: s.exchange_rate_date || undefined,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at,
-        createdBy: s.created_by,
-        deletedAt: s.deleted_at,
       }));
     },
     enabled: !!groupId,
@@ -306,20 +294,7 @@ export function useGroupBalances(groupId: string) {
         }
       }
 
-      const settlements: Settlement[] = rawSettlements.map((s) => ({
-        id: s.id,
-        sourceId: s.group_id || 'group',
-        groupId: s.group_id || undefined,
-        fromUserId: s.from_user_id,
-        toUserId: s.to_user_id,
-        amountMinor: s.amount_minor,
-        currency: s.currency,
-        settlementDate: s.settlement_date,
-        notes: s.notes || undefined,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at,
-        createdBy: s.created_by,
-      }));
+      const settlements: Settlement[] = rawSettlements.map(toSettlement);
 
       const computed = calculateGroupBalances(expenses, allSplits, settlements, currency);
       return {

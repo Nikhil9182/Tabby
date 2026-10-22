@@ -3,6 +3,7 @@ import { ArrowRight, Users } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CurrencyDisplay } from '@/components/currency/currency-display';
+import { formatMoney } from '@/domain/money/money';
 import { formatRelativeDate, formatDate } from '@/lib/date';
 import type { Settlement, User } from '@/domain/models/types';
 import { cn } from '@/lib/utils';
@@ -128,6 +129,18 @@ export function SettlementRow({
           size="md"
           className="font-black text-foreground"
         />
+        {/* Cross-currency payment: what it took off the debt, at the rate saved with it */}
+        {settlement.appliedCurrency &&
+          settlement.appliedAmountMinor &&
+          settlement.appliedCurrency !== settlement.currency && (
+            <p
+              className="text-[11px] text-muted-foreground"
+              title={settlement.exchangeRateDate ? `Rate for ${settlement.exchangeRateDate}, saved with the payment` : undefined}
+            >
+              {formatMoney(settlement.appliedAmountMinor, settlement.appliedCurrency)} off the {settlement.appliedCurrency}{' '}
+              balance
+            </p>
+          )}
       </div>
     </div>
   );
