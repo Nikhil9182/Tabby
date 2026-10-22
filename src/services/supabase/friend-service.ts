@@ -83,12 +83,9 @@ export class FriendService {
       throw new Error('You cannot add yourself as a friend.');
     }
 
-    // 1. Search for profile by email
-    const { data: profiles, error: searchError } = await (supabase
-      .from('profiles') as any)
-      .select('*')
-      .ilike('email', cleanEmail)
-      .limit(1);
+    // 1. Exact email lookup (RPC bypasses profiles RLS, which hides non-connected users)
+    const { data: profiles, error: searchError } = await (supabase as any)
+      .rpc('find_profile_by_email', { p_email: cleanEmail });
 
     if (searchError) {
       throw new Error(`Failed to search users: ${searchError.message}`);

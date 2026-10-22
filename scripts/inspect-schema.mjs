@@ -51,6 +51,7 @@ const EXPECTED_TABLES = [
   'settlement_allocations',
   'categories',
   'currency_rates_cache',
+  'friendships',
 ];
 
 async function main() {
@@ -83,7 +84,7 @@ async function main() {
     console.error(`⚠️  ${failed} tables failed inspection. Check migrations.`);
     process.exit(1);
   } else {
-    console.log('✨ All 11 Tabby tables exist and are healthy. No reset required.\n');
+    console.log(`✨ All ${EXPECTED_TABLES.length} Tabby tables exist and are healthy. No reset required.\n`);
   }
 }
 
