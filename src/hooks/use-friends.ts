@@ -14,12 +14,14 @@ export interface UseFriendsResult {
   addError: Error | null;
 }
 
+const NO_FRIENDS: FriendItem[] = [];
+
 export function useFriends(): UseFriendsResult {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const {
-    data: friends = [],
+    data: friends = NO_FRIENDS,
     isLoading,
     error,
     refetch,

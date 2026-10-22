@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { User } from '@/domain/models/types';
 import { useAuth } from './use-auth';
@@ -69,8 +70,14 @@ export function useCurrentUser(): UseCurrentUserResult {
     },
   });
 
+  // Keep the fallback object stable across renders so consumers' memos/effects don't churn
+  const fallbackUser = useMemo(
+    () => (authUser ? mapProfileToUser(null, authUser) : null),
+    [authUser]
+  );
+
   return {
-    user: user || (authUser ? mapProfileToUser(null, authUser) : null),
+    user: user || fallbackUser,
     isLoading,
     error: error as Error | null,
     updateProfile: (updates: UpdateProfileInput) => updateProfileMutation.mutateAsync(updates),
@@ -86,11 +93,13 @@ export interface UseUsersResult {
   refetch: () => Promise<unknown>;
 }
 
+const EMPTY_USERS_MAP: Record<string, DbProfile> = {};
+
 export function useUsers(userIds?: string[]): UseUsersResult {
   const { user: currentUser } = useCurrentUser();
 
   const {
-    data: usersMap = {},
+    data: usersMap = EMPTY_USERS_MAP,
     isLoading,
     error,
     refetch,
@@ -103,25 +112,28 @@ export function useUsers(userIds?: string[]): UseUsersResult {
     enabled: !!userIds && userIds.length > 0,
   });
 
-  const users: User[] = [];
-  if (currentUser) {
-    users.push(currentUser);
-  }
-
-  for (const [id, p] of Object.entries(usersMap)) {
-    if (!users.some((u) => u.id === id)) {
-      users.push({
-        id: p.id,
-        name: p.display_name,
-        displayName: p.display_name,
-        email: p.email || '',
-        avatarUrl: p.avatar_url || undefined,
-        picture: p.avatar_url || undefined,
-        createdAt: p.created_at,
-        updatedAt: p.updated_at,
-      });
+  const users = useMemo(() => {
+    const list: User[] = [];
+    if (currentUser) {
+      list.push(currentUser);
     }
-  }
+
+    for (const [id, p] of Object.entries(usersMap)) {
+      if (!list.some((u) => u.id === id)) {
+        list.push({
+          id: p.id,
+          name: p.display_name,
+          displayName: p.display_name,
+          email: p.email || '',
+          avatarUrl: p.avatar_url || undefined,
+          picture: p.avatar_url || undefined,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+        });
+      }
+    }
+    return list;
+  }, [currentUser, usersMap]);
 
   const getUserById = (id: string): User | undefined => {
     if (currentUser && (currentUser.id === id || id === 'current_user' || id === 'user_self')) {

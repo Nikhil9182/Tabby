@@ -7,6 +7,13 @@ export type DbGroupExpense = Database['public']['Tables']['group_expenses']['Row
 export type DbPersonalExpense = Database['public']['Tables']['personal_expenses']['Row'];
 export type DbExpenseSplit = Database['public']['Tables']['expense_splits']['Row'];
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// category_id is a UUID column; local fallback ids like 'cat_other' must not reach it
+function toCategoryId(id?: string): string | null {
+  return id && UUID_RE.test(id) ? id : null;
+}
+
 export interface ExpenseSplitInput {
   userId: string;
   shareMinor: number;
@@ -281,7 +288,7 @@ class ExpenseService {
           p_friend_id: otherUserId,
           p_description: input.description.trim(),
           p_notes: input.notes?.trim() || null,
-          p_category_id: input.categoryId || null,
+          p_category_id: toCategoryId(input.categoryId),
           p_paid_by: input.paidBy,
           p_amount_minor: input.amountMinor,
           p_currency: input.currency.toUpperCase(),
@@ -325,7 +332,7 @@ class ExpenseService {
           group_id: null,
           description: input.description.trim(),
           notes: input.notes?.trim() || null,
-          category_id: input.categoryId || null,
+          category_id: toCategoryId(input.categoryId),
           paid_by: input.paidBy,
           amount_minor: input.amountMinor,
           currency: input.currency.toUpperCase(),
@@ -363,7 +370,7 @@ class ExpenseService {
         p_group_id: input.groupId,
         p_description: input.description.trim(),
         p_notes: input.notes?.trim() || null,
-        p_category_id: input.categoryId || null,
+        p_category_id: toCategoryId(input.categoryId),
         p_paid_by: input.paidBy,
         p_amount_minor: input.amountMinor,
         p_currency: input.currency.toUpperCase(),
@@ -402,7 +409,7 @@ class ExpenseService {
           owner_id: user.id,
           description: input.description.trim(),
           notes: input.notes?.trim() || null,
-          category_id: input.categoryId || null,
+          category_id: toCategoryId(input.categoryId),
           amount_minor: input.amountMinor,
           currency: input.currency.toUpperCase(),
           expense_date: input.expenseDate || new Date().toISOString(),

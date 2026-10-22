@@ -138,7 +138,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       currency: defaultCurrency,
       expenseDate: todayStr,
       groupId: queryGroupId || 'personal',
-      categoryId: 'cat_other',
+      categoryId: '',
       paidBy: currentUserId,
       notes: '',
     },
@@ -146,6 +146,15 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
   const watchedCurrency = watch('currency') || defaultCurrency;
   const watchedAmountStr = watch('amount');
+  const watchedCategoryId = watch('categoryId');
+
+  // Default to the "General"/"Other" category once real categories load
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (watchedCategoryId && categories.some((c) => c.id === watchedCategoryId)) return;
+    const fallback = categories.find((c) => /general|other/i.test(c.name)) || categories[0];
+    setValue('categoryId', fallback.id);
+  }, [categories, watchedCategoryId, setValue]);
 
   // Load group members if a group is selected
   const { members: groupMemberships } = useGroup(
@@ -252,10 +261,13 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     return deduplicated;
   }, [trackingMode, selectedFriendId, supabaseFriends, groupMemberships, users, currentUserId, currentUser, existingExpense]);
 
-  // When available members change, update participants list if not editing
+  // When the set of available members changes, update participants list if not editing.
+  // Keyed on the ids (not the array) so a re-render with the same members doesn't reset state.
+  const availableMemberIdsKey = availableMembers.map((m) => m.id).join(',');
+
   useEffect(() => {
-    if (!isEditing && availableMembers.length > 0) {
-      const allIds = availableMembers.map((m) => m.id);
+    if (!isEditing && availableMemberIdsKey) {
+      const allIds = availableMemberIdsKey.split(',');
       setSelectedParticipants(allIds);
 
       const equalPct = Math.floor(100 / allIds.length);
@@ -268,7 +280,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       setPercentages(newPct);
       setShares(newShares);
     }
-  }, [availableMembers, isEditing]);
+  }, [availableMemberIdsKey, isEditing]);
 
   // Prepopulate if editing (once when expense is loaded)
   const hasPopulatedRef = React.useRef(false);
@@ -302,7 +314,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         currency: curr,
         expenseDate: existingExpense.expenseDate.slice(0, 10),
         groupId: existingExpense.groupId || 'personal',
-        categoryId: existingExpense.categoryId || 'cat_other',
+        categoryId: existingExpense.categoryId || '',
         paidBy: existingExpense.paidBy,
         notes: existingExpense.notes || '',
       });

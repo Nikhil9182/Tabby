@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import type {
@@ -173,14 +173,18 @@ export function useGroup(groupId: string) {
 
   const group: Group | undefined = groupDetails ? mapDbGroupToGroup(groupDetails) : undefined;
 
-  const members: GroupMembership[] = (groupDetails?.members || []).map((m) => ({
-    id: m.id,
-    groupId,
-    userId: m.userId,
-    role: m.role,
-    status: m.status,
-    joinedAt: m.joinedAt,
-  }));
+  const members: GroupMembership[] = useMemo(
+    () =>
+      (groupDetails?.members || []).map((m) => ({
+        id: m.id,
+        groupId,
+        userId: m.userId,
+        role: m.role,
+        status: m.status,
+        joinedAt: m.joinedAt,
+      })),
+    [groupDetails, groupId]
+  );
 
   const { data: expenses = [], isLoading: isLoadingExpenses } = useQuery<Expense[]>({
     queryKey: ['expenses', { groupId }],
