@@ -960,21 +960,21 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
               onValueChange={(val: any) => setSplitType(val)}
               className="w-full"
             >
-              <TabsList className="grid grid-cols-2 min-[400px]:grid-cols-4 w-full h-auto gap-1 [&>button]:min-w-0 [&>button]:min-h-10 [&>button]:px-1">
+              <TabsList className="w-full [&_svg]:hidden sm:[&_svg]:block">
                 <TabsTrigger value="equal" className="text-xs">
-                  <Divide className="h-3.5 w-3.5 mr-1" />
+                  <Divide className="h-3.5 w-3.5" />
                   Equal
                 </TabsTrigger>
                 <TabsTrigger value="exact" className="text-xs">
-                  <DollarSign className="h-3.5 w-3.5 mr-1" />
+                  <DollarSign className="h-3.5 w-3.5" />
                   Exact
                 </TabsTrigger>
                 <TabsTrigger value="percentage" className="text-xs">
-                  <Percent className="h-3.5 w-3.5 mr-1" />
+                  <Percent className="h-3.5 w-3.5" />
                   Percent
                 </TabsTrigger>
                 <TabsTrigger value="shares" className="text-xs">
-                  <PieChart className="h-3.5 w-3.5 mr-1" />
+                  <PieChart className="h-3.5 w-3.5" />
                   Shares
                 </TabsTrigger>
               </TabsList>

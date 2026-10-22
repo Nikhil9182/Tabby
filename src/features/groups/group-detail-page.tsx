@@ -1,14 +1,13 @@
 import { useCollaboration } from '@/hooks/use-collaboration';
 import { groupService } from '@/services/supabase/group-service';
 import React, { useState, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Users,
   Plus,
   ArrowRightLeft,
   ArrowLeft,
   Receipt,
-  Scale,
   Settings,
   UserPlus,
   Trash2,
@@ -58,6 +57,7 @@ import { cn } from '@/lib/utils';
 export function GroupDetailPage() {
   const { id, groupId: paramGroupId } = useParams<{ id?: string; groupId?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const groupId = paramGroupId || id || '';
 
   const { user } = useAuth();
@@ -66,12 +66,17 @@ export function GroupDetailPage() {
 
   const { group, members, expenses, settlements, balances, isLoading, refetch } = useGroup(groupId);
   const { updateGroup, archiveGroup } = useGroups();
-  const { users } = useUsers();
+  const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
+  const { users } = useUsers(memberIds);
   const { friends, invitations, sendRequest, isBusy } = useCollaboration();
   const { categories } = useCategories();
   const { splits } = useExpenses({ groupId });
 
-  const [activeTab, setActiveTab] = useState('overview');
+  // Settle-up links return with ?tab=balances
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab && ['expenses', 'balances', 'members', 'settings'].includes(tab) ? tab : 'expenses';
+  });
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
   // New member inputs
@@ -224,317 +229,167 @@ export function GroupDetailPage() {
   return (
     <div className="space-y-6 sm:space-y-8 pb-16 animate-in fade-in-50 duration-300">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border/40">
-        <div className="flex min-w-0 items-start sm:items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(group.kind === 'direct' ? '/friends' : '/groups')}
-            className="rounded-full -ml-2 text-muted-foreground hover:text-foreground shrink-0 h-10 w-10"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+      <div className="flex items-start gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate(group.kind === 'direct' ? '/friends' : '/groups')}
+          className="rounded-full -ml-2 text-muted-foreground hover:text-foreground shrink-0"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
 
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground break-words">
-                {group.name}
-              </h1>
-              <Badge variant="outline" className="font-mono text-xs uppercase font-bold">
-                {groupCurrency}
+        <div className="min-w-0 flex-1 space-y-0.5 pt-0.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground break-words">
+              {group.name}
+            </h1>
+            <Badge variant="outline" className="font-mono text-[10px] uppercase">
+              {groupCurrency}
+            </Badge>
+            {group.isArchived && (
+              <Badge variant="secondary" className="text-[10px] uppercase">
+                Archived
               </Badge>
-              {group.isArchived && (
-                <Badge variant="secondary" className="text-xs uppercase font-bold">
-                  Archived
-                </Badge>
-              )}
-            </div>
-            {group.description && (
-              <p className="text-sm text-muted-foreground max-w-xl font-medium">{group.description}</p>
             )}
           </div>
+          {group.description && (
+            <p className="text-sm text-muted-foreground line-clamp-2">{group.description}</p>
+          )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto self-start sm:self-auto">
-          <Button
-            onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-            className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
-          >
-            <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>Add Expense</span>
-          </Button>
-
-          <Button
-            variant="outline"
-            onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
-            className="h-11 px-4 rounded-2xl font-bold gap-2"
-          >
-            <ArrowRightLeft className="h-4 w-4" />
-            <span>Settle Up</span>
-          </Button>
-        </div>
+        <Button
+          variant={activeTab === 'settings' ? 'secondary' : 'ghost'}
+          size="icon"
+          onClick={() => setActiveTab(activeTab === 'settings' ? 'expenses' : 'settings')}
+          className="rounded-full shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label="Group settings"
+          title="Group settings"
+        >
+          <Settings className="h-5 w-5" />
+        </Button>
       </div>
 
       {/* Trip Cover Banner if present */}
       {group.imageUrl && (
-        <div className="relative h-44 sm:h-56 w-full rounded-3xl overflow-hidden shadow-xs border border-border/80">
-          <img
-            src={group.imageUrl}
-            alt={group.name}
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex items-end p-6">
-            <span className="text-white font-black text-2xl sm:text-3xl tracking-tight drop-shadow-sm">
-              {group.name}
-            </span>
-          </div>
+        <div className="h-28 sm:h-40 w-full rounded-xl overflow-hidden border border-border/60">
+          <img src={group.imageUrl} alt="" className="h-full w-full object-cover" />
         </div>
       )}
 
-      {/* Group Navigation Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-auto gap-1 bg-muted/60 p-1 rounded-2xl [&>button]:min-w-0 [&>button]:min-h-10 [&>button]:px-1">
-          <TabsTrigger value="overview" className="text-xs sm:text-sm font-bold rounded-xl">
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="expenses" className="text-xs sm:text-sm font-bold rounded-xl">
-            Expenses ({expenses.length})
-          </TabsTrigger>
-          <TabsTrigger value="balances" className="text-xs sm:text-sm font-bold rounded-xl">
-            Balances
-          </TabsTrigger>
-          <TabsTrigger value="members" className="text-xs sm:text-sm font-bold rounded-xl">
-            Members ({members.length})
-          </TabsTrigger>
-          <TabsTrigger value="settlements" className="text-xs sm:text-sm font-bold rounded-xl">
-            Settlements ({settlements.length})
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="text-xs sm:text-sm font-bold rounded-xl">
-            Settings
-          </TabsTrigger>
-        </TabsList>
-
-        {/* 1. OVERVIEW TAB */}
-        <TabsContent value="overview" className="space-y-6 mt-0">
-          {/* Net Balance Status Card */}
-          <div
-            className={cn(
-              'rounded-3xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs relative overflow-hidden transition-all',
-              myNetMinor > 0 && 'border-emerald-500/40 bg-emerald-500/[0.04]',
-              myNetMinor < 0 && 'border-rose-500/40 bg-rose-500/[0.04]'
-            )}
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-1">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Your Group Net Balance
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <CurrencyDisplay
-                    amountMinor={myNetMinor}
-                    currency={groupCurrency}
-                    colorize
-                    showSign
-                    size="xl"
-                    className="font-black"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  {myNetMinor > 0
-                    ? 'In this group, other members owe you'
-                    : myNetMinor < 0
-                      ? 'In this group, you owe money'
-                      : 'You are completely settled up in this group'}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Button
-                  onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-                  className="rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold h-10 px-4"
-                >
-                  <Plus className="h-4 w-4 mr-1.5" />
-                  Add Expense
-                </Button>
-                {myNetMinor !== 0 ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => setActiveTab('balances')}
-                    className="rounded-2xl font-bold h-10 px-4"
-                  >
-                    <ArrowRightLeft className="h-4 w-4 mr-1.5" />
-                    Settle Up
-                  </Button>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs border border-emerald-500/20">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    <span>All settled up</span>
-                  </div>
+      {/* Your balance + primary actions (Splitwise-style summary) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          {myNetMinor === 0 ? (
+            <p className="flex items-center gap-1.5 text-base font-semibold text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              You are all settled up
+            </p>
+          ) : (
+            <p className="text-base font-semibold text-foreground">
+              {myNetMinor > 0 ? 'You are owed ' : 'You owe '}
+              <CurrencyDisplay
+                amountMinor={Math.abs(myNetMinor)}
+                currency={groupCurrency}
+                size="md"
+                className={cn(
+                  'font-black',
+                  myNetMinor > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                 )}
-              </div>
-            </div>
-          </div>
-
-          {/* Simplified Debts Preview */}
-          {balances?.simplifiedDebts && balances.simplifiedDebts.length > 0 && (
-            <Card className="border-border/60 shadow-xs">
-              <CardHeader className="p-5 pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Scale className="h-4 w-4 text-primary" />
-                  <span>Suggested Debt Settlements</span>
-                </CardTitle>
-                <CardDescription>
-                  Minimal transactions to clear all obligations inside this group.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-5 pt-0 space-y-2.5">
-                {balances.simplifiedDebts.map((debt, idx) => {
-                  const fromName = debt.fromUserId === currentUserId ? 'You' : getUserName(debt.fromUserId);
-                  const toName = debt.toUserId === currentUserId ? 'you' : getUserName(debt.toUserId);
-
-                  return (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 text-sm"
-                    >
-                      <div className="flex items-center gap-2 font-medium">
-                        <span className="text-foreground">{fromName}</span>
-                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-foreground">{toName}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <CurrencyDisplay
-                          amountMinor={debt.amountMinor}
-                          currency={debt.currency || groupCurrency}
-                          size="md"
-                          className="font-bold"
-                        />
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() =>
-                            navigate(
-                              `/settlements/new?groupId=${group.id}&from=${debt.fromUserId}&to=${debt.toUserId}&amount=${debt.amountMinor}&currency=${debt.currency || groupCurrency}&returnTo=/groups/${group.id}?tab=balances`
-                            )
-                          }
-                        >
-                          Settle
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Recent Expenses in Group */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-foreground">Recent Expenses</h3>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => setActiveTab('expenses')}
-                className="text-xs"
-              >
-                View all ({expenses.length})
-              </Button>
-            </div>
-
-            {expenses.length === 0 ? (
-              <EmptyState
-                icon={<Receipt className="h-6 w-6" />}
-                title="No group expenses yet"
-                description="Expenses added here will automatically split among group members."
-                action={
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-                  >
-                    <Plus className="h-4 w-4 mr-1.5" />
-                    Add First Expense
-                  </Button>
-                }
               />
-            ) : (
-              <div className="space-y-2.5">
-                {expenses.slice(0, 5).map((exp) => {
-                  const cat = exp.categoryId ? categoryMap.get(exp.categoryId) : undefined;
-                  const expSplits = splits[exp.id] || [];
-                  const userSplit = expSplits.find((s) => s.userId === currentUserId);
+            </p>
+          )}
+        </div>
 
-                  return (
-                    <ExpenseRow
-                      key={exp.id}
-                      expense={exp}
-                      categoryName={cat?.name}
-                      categoryIcon={cat?.icon}
-                      categoryColor={cat?.color}
-                      payerName={getUserName(exp.paidBy)}
-                      currentUserId={currentUserId}
-                      userShareMinor={userSplit?.shareMinor}
-                      defaultCurrency={groupCurrency}
-                      onClick={() => navigate(`/expenses/${exp.id}`)}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </TabsContent>
+        <div className="grid grid-cols-2 sm:flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
+            className="gap-1.5"
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            <span>Settle up</span>
+          </Button>
+          <Button
+            onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
+            className="gap-1.5 font-semibold"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add expense</span>
+          </Button>
+        </div>
+      </div>
 
-        {/* 2. EXPENSES TAB */}
-        <TabsContent value="expenses" className="space-y-4 mt-0">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Total {expenses.length} {expenses.length === 1 ? 'expense' : 'expenses'} recorded
-            </span>
-            <Button
-              size="sm"
-              onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add Expense</span>
-            </Button>
-          </div>
+      {/* Group Navigation Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        {activeTab !== 'settings' && (
+          <TabsList className="w-full">
+            <TabsTrigger value="expenses">Expenses</TabsTrigger>
+            <TabsTrigger value="balances">Balances</TabsTrigger>
+            <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
+          </TabsList>
+        )}
 
-          {expenses.length === 0 ? (
+        {/* 1. EXPENSES TAB (expenses, then payments) */}
+        <TabsContent value="expenses" className="space-y-6 mt-0">
+          {expenses.length === 0 && settlements.length === 0 ? (
             <EmptyState
               icon={<Receipt className="h-6 w-6" />}
-              title="No expenses in this group"
-              description="Add expenses to track hotel rooms, groceries, or rental cars."
+              title="No expenses yet"
+              description="Add an expense and it will be split between group members."
               action={
                 <Button onClick={() => navigate(`/expenses/new?groupId=${group.id}`)} size="sm">
-                  Add Expense
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Add expense
                 </Button>
               }
             />
           ) : (
-            <div className="space-y-2.5">
-              {expenses.map((exp) => {
-                const cat = exp.categoryId ? categoryMap.get(exp.categoryId) : undefined;
-                const expSplits = splits[exp.id] || [];
-                const userSplit = expSplits.find((s) => s.userId === currentUserId);
+            <>
+              {expenses.length > 0 && (
+                <div className="space-y-2.5">
+                  {expenses.map((exp) => {
+                    const cat = exp.categoryId ? categoryMap.get(exp.categoryId) : undefined;
+                    const expSplits = splits[exp.id] || [];
+                    const userSplit = expSplits.find((s) => s.userId === currentUserId);
 
-                return (
-                  <ExpenseRow
-                    key={exp.id}
-                    expense={exp}
-                    categoryName={cat?.name}
-                    categoryIcon={cat?.icon}
-                    categoryColor={cat?.color}
-                    payerName={getUserName(exp.paidBy)}
-                    currentUserId={currentUserId}
-                    userShareMinor={userSplit?.shareMinor}
-                    defaultCurrency={groupCurrency}
-                    onClick={() => navigate(`/expenses/${exp.id}`)}
-                  />
-                );
-              })}
-            </div>
+                    return (
+                      <ExpenseRow
+                        key={exp.id}
+                        expense={exp}
+                        categoryName={cat?.name}
+                        categoryIcon={cat?.icon}
+                        categoryColor={cat?.color}
+                        payerName={getUserName(exp.paidBy)}
+                        currentUserId={currentUserId}
+                        userShareMinor={userSplit?.shareMinor}
+                        defaultCurrency={groupCurrency}
+                        onClick={() => navigate(`/expenses/${exp.id}`)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+
+              {settlements.length > 0 && (
+                <div className="space-y-2.5">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Payments
+                  </h3>
+                  {settlements.map((s) => (
+                    <SettlementRow
+                      key={s.id}
+                      settlement={s}
+                      fromUser={userMap.get(s.fromUserId)}
+                      toUser={userMap.get(s.toUserId)}
+                      groupName={group.name}
+                      currentUserId={currentUserId}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
@@ -759,56 +614,17 @@ export function GroupDetailPage() {
           </Card>
         </TabsContent>
 
-        {/* 5. SETTLEMENTS TAB */}
-        <TabsContent value="settlements" className="space-y-4 mt-0">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              {settlements.length} {settlements.length === 1 ? 'settlement' : 'settlements'} recorded
-            </span>
-            <Button
-              size="sm"
-              onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
-              className="gap-1.5"
-            >
-              <ArrowRightLeft className="h-4 w-4" />
-              <span>Record Settlement</span>
-            </Button>
-          </div>
-
-          {settlements.length === 0 ? (
-            <EmptyState
-              icon={<ArrowRightLeft className="h-6 w-6" />}
-              title="No settlements recorded yet"
-              description="Record payments between group members to keep your ledgers clear and balanced."
-              action={
-                <Button onClick={() => navigate(`/settlements/new?groupId=${group.id}`)} size="sm">
-                  Record First Settlement
-                </Button>
-              }
-            />
-          ) : (
-            <div className="space-y-2.5">
-              {settlements.map((s) => {
-                const fromU = userMap.get(s.fromUserId);
-                const toU = userMap.get(s.toUserId);
-
-                return (
-                  <SettlementRow
-                    key={s.id}
-                    settlement={s}
-                    fromUser={fromU}
-                    toUser={toU}
-                    groupName={group.name}
-                    currentUserId={currentUserId}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-
         {/* 6. SETTINGS TAB */}
         <TabsContent value="settings" className="space-y-6 mt-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveTab('expenses')}
+            className="gap-1.5 -ml-2 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to group</span>
+          </Button>
           <Card className="border-border/60 shadow-xs">
             <CardHeader className="p-5 pb-3">
               <CardTitle className="text-base">Group Settings</CardTitle>
@@ -851,7 +667,10 @@ export function GroupDetailPage() {
                 </div>
 
                 {/* Trip Cover Image Picker */}
-                <div className="pt-2 border-t border-border/40">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Cover photo
+                  </label>
                   <TripImagePicker
                     value={editImageUrl}
                     onChange={setEditImageUrl}
