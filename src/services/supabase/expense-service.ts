@@ -358,7 +358,12 @@ class ExpenseService {
         percentage_basis_points: s.percentageBasisPoints || null,
       }));
 
-      await (supabase.from('expense_splits') as any).insert(splitsToInsert);
+      const { error: splitsError } = await (supabase.from('expense_splits') as any).insert(splitsToInsert);
+      if (splitsError) {
+        // Don't leave an expense with no participants behind
+        await (supabase.from('group_expenses') as any).delete().eq('id', expData.id);
+        throw new Error(`Failed to save expense splits: ${splitsError.message}`);
+      }
 
       return {
         id: expData.id,
