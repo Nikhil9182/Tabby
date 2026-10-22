@@ -104,7 +104,7 @@ export function useUsers(userIds?: string[]): UseUsersResult {
     error,
     refetch,
   } = useQuery<Record<string, DbProfile>, Error>({
-    queryKey: ['users', (userIds || []).sort().join(',')],
+    queryKey: ['users', [...(userIds || [])].sort().join(',')],
     queryFn: async () => {
       if (!userIds || userIds.length === 0) return {};
       return await profileService.getProfiles(userIds);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -45,7 +45,15 @@ export function ExpenseDetailPage() {
 
   const { expense, splits, isLoading, error } = useExpense(id || '');
   const { deleteExpense, isDeleting } = useExpenses();
-  const { users } = useUsers();
+  // Load profiles for the payer and everyone in the split so names/avatars resolve
+  const involvedUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (expense?.paidBy) ids.add(expense.paidBy);
+    splits.forEach((s: any) => s.userId && ids.add(s.userId));
+    ids.delete(currentUserId);
+    return [...ids];
+  }, [expense?.paidBy, splits, currentUserId]);
+  const { users } = useUsers(involvedUserIds);
   const { groups } = useGroups();
   const { categories } = useCategories();
 
