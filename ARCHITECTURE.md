@@ -95,64 +95,32 @@ All tables are defined in schema `public` with UUID primary keys and strict fore
 
 ### Core Tables
 
-1. **`profiles`**:
-   - `id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE`
-   - `email TEXT NOT NULL`, `display_name TEXT`, `avatar_url TEXT`, `default_currency TEXT DEFAULT 'USD'`
-   - Auto-provisioned via PostgreSQL trigger on `auth.users` creation.
+State after migration `20261023000004_schema_cleanup.sql`. Money is always `*_minor BIGINT` (integer minor units) next to a 3-letter `currency`.
 
-2. **`groups`**:
-   - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-   - `name TEXT NOT NULL`, `description TEXT`, `currency TEXT NOT NULL DEFAULT 'USD'`, `simplify_debts BOOLEAN DEFAULT true`
-   - `created_by UUID NOT NULL REFERENCES profiles(id)`
-   - `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`
+1. **`profiles`**: `id` (= `auth.users.id`), `display_name`, `avatar_url`, `email`, `preferred_currency` (display currency).
+   `email` is a deliberate copy of `auth.users.email`: the client cannot read `auth.users`, and friend lookup (`find_profile_by_email`) needs it. Indexed on `lower(trim(email))`.
 
-3. **`group_members`**:
-   - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-   - `group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE`
-   - `user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE`
-   - `role TEXT NOT NULL CHECK (role IN ('admin', 'member'))`
-   - `joined_at TIMESTAMPTZ DEFAULT now()`
-   - `UNIQUE(group_id, user_id)`
+2. **`groups`**: `name`, `description`, `default_currency`, `image_url`, `created_by`, `archived_at`.
 
-4. **`group_invitations`**:
-   - Manages invitations by email for users joining existing groups.
-   - `status TEXT CHECK (status IN ('pending', 'accepted', 'rejected', 'expired'))`
+3. **`group_members`**: `group_id`, `user_id`, `role` (`owner`/`admin`/`member`), `status` (`active`/`invited`/`removed`), `joined_at`. `UNIQUE (group_id, user_id)`.
 
-5. **`group_expenses`**:
-   - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-   - `group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE`
-   - `paid_by UUID NOT NULL REFERENCES profiles(id)`
-   - `amount_cents BIGINT NOT NULL CHECK (amount_cents > 0)`
-   - `currency TEXT NOT NULL`, `category_id UUID`, `date TIMESTAMPTZ NOT NULL`
-   - `split_type TEXT NOT NULL CHECK (split_type IN ('equal', 'exact', 'percentage', 'shares'))`
-   - `exchange_rate NUMERIC(14, 6) DEFAULT 1.0` (frozen rate at creation)
-   - `created_by UUID NOT NULL REFERENCES profiles(id)`
+4. **`group_invitations`**: `group_id`, `invited_email`, `invited_by`, `role`, `status`, unique `token`, `expires_at`, `accepted_by`, `accepted_at`.
 
-6. **`expense_splits`**:
-   - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-   - `expense_id UUID NOT NULL REFERENCES group_expenses(id) ON DELETE CASCADE`
-   - `user_id UUID NOT NULL REFERENCES profiles(id)`
-   - `allocated_cents BIGINT NOT NULL CHECK (allocated_cents >= 0)`
-   - `percentage_bp INTEGER`, `shares_count INTEGER`
-   - `UNIQUE(expense_id, user_id)`
+5. **`friendships`**: one canonical row per pair, `user_id_1 < user_id_2`, `UNIQUE (user_id_1, user_id_2)`, `status`, `action_user_id`.
 
-7. **`settlements`**:
-   - Distinct, immutable debt transfers between two group members.
-   - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-   - `group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE`
-   - `payer_id UUID NOT NULL REFERENCES profiles(id)`
-   - `payee_id UUID NOT NULL REFERENCES profiles(id)`
-   - `amount_cents BIGINT NOT NULL CHECK (amount_cents > 0)`
-   - `CHECK (payer_id <> payee_id)`
+6. **`group_expenses`** (both group and friend expenses):
+   - Context: `context_type` is `'group'` (with `group_id`, no `friendship_id`) or `'direct'` (with `friendship_id`, no `group_id`), enforced by `group_expenses_context_check`.
+   - Money: `amount_minor` + `currency` (the transaction, never rewritten).
+   - Conversion snapshot: `reporting_currency`, `exchange_rate`, `exchange_rate_date`, `exchange_rate_source`, `reporting_amount_minor` (see §8.1).
+   - Also `paid_by`, `category_id`, `split_type`, `expense_date`, `created_by`, `deleted_at`.
 
-8. **`settlement_allocations`**:
-   - Optional link between settlements and specific expenses for detailed receipt audit tracking.
+7. **`expense_splits`**: `group_expense_id`, `user_id`, `share_minor` (sums to the expense's `amount_minor`), optional `weight` / `percentage_basis_points`. `UNIQUE (group_expense_id, user_id)`.
 
-9. **`personal_expenses`**:
-   - Private personal finance tracking records visible only to the owning user.
+8. **`settlements`**: `context_type` + `group_id` / `friendship_id` (same check as expenses), `from_user_id`, `to_user_id`, `amount_minor` + `currency` (what was paid), optional `applied_currency` + `applied_amount_minor` with `exchange_rate`, `exchange_rate_date`, `exchange_rate_source` for cross-currency payments, `settlement_date`, `notes`, `deleted_at`.
 
-10. **`currency_rates_cache`**:
-    - Centralized cache of historical/daily exchange rates fetched from Frankfurter API v2.
+9. **`personal_expenses`**: solo expenses visible only to `owner_id`.
+
+10. **`currency_rates_cache`**: one row per `(base_currency, quote_currency, rate_date)`, shared by all users.
 
 ---
 

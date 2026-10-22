@@ -110,7 +110,6 @@ export interface Database {
           role: 'owner' | 'admin' | 'member';
           status: 'active' | 'invited' | 'removed';
           joined_at: string;
-          created_at: string;
         };
         Insert: {
           id?: string;
@@ -119,7 +118,6 @@ export interface Database {
           role?: 'owner' | 'admin' | 'member';
           status?: 'active' | 'invited' | 'removed';
           joined_at?: string;
-          created_at?: string;
         };
         Update: {
           id?: string;
@@ -128,7 +126,6 @@ export interface Database {
           role?: 'owner' | 'admin' | 'member';
           status?: 'active' | 'invited' | 'removed';
           joined_at?: string;
-          created_at?: string;
         };
         Relationships: [];
       };
@@ -375,33 +372,6 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
-        };
-        Relationships: [];
-      };
-      settlement_allocations: {
-        Row: {
-          id: string;
-          settlement_id: string;
-          group_expense_id: string;
-          amount_minor: number;
-          currency: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          settlement_id: string;
-          group_expense_id: string;
-          amount_minor: number;
-          currency?: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          settlement_id?: string;
-          group_expense_id?: string;
-          amount_minor?: number;
-          currency?: string;
-          created_at?: string;
         };
         Relationships: [];
       };

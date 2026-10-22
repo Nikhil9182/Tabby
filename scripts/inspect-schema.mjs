@@ -48,7 +48,6 @@ const EXPECTED_TABLES = [
   'group_expenses',
   'expense_splits',
   'settlements',
-  'settlement_allocations',
   'categories',
   'currency_rates_cache',
   'friendships',
