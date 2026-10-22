@@ -41,10 +41,10 @@ export function SettlementRow({
 
   const fromName = isYouFrom
     ? 'You'
-    : fromUser?.name || fromUser?.email || (settlement.fromUserId === 'user_self' ? 'You' : settlement.fromUserId);
+    : fromUser?.name || fromUser?.email || (settlement.fromUserId === 'user_self' ? 'You' : 'Someone');
   const toName = isYouTo
     ? 'You'
-    : toUser?.name || toUser?.email || (settlement.toUserId === 'user_self' ? 'You' : settlement.toUserId);
+    : toUser?.name || toUser?.email || (settlement.toUserId === 'user_self' ? 'You' : 'Someone');
 
   const settlementDateObj = new Date(settlement.settlementDate);
   const now = new Date();

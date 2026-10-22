@@ -112,6 +112,28 @@ class ProfileService {
     }
     return map;
   }
+
+  /**
+   * Fetches every profile the current user may see. RLS limits this to
+   * yourself, your friends and people you share a group with.
+   */
+  async getVisibleProfiles(): Promise<Record<string, DbProfile>> {
+    const { data, error } = await (supabase
+      .from('profiles') as any)
+      .select('*')
+      .limit(1000);
+
+    if (error) {
+      console.error('Error fetching visible profiles:', error);
+      return {};
+    }
+
+    const map: Record<string, DbProfile> = {};
+    for (const p of (data || []) as DbProfile[]) {
+      map[p.id] = p;
+    }
+    return map;
+  }
 }
 
 export const profileService = new ProfileService();

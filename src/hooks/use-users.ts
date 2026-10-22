@@ -104,12 +104,14 @@ export function useUsers(userIds?: string[]): UseUsersResult {
     error,
     refetch,
   } = useQuery<Record<string, DbProfile>, Error>({
-    queryKey: ['users', [...(userIds || [])].sort().join(',')],
+    // No ids = everyone you're connected to (friends + group co-members, via RLS)
+    queryKey: userIds ? ['users', [...userIds].sort().join(',')] : ['users', 'visible', currentUser?.id],
     queryFn: async () => {
-      if (!userIds || userIds.length === 0) return {};
+      if (!userIds) return await profileService.getVisibleProfiles();
+      if (userIds.length === 0) return {};
       return await profileService.getProfiles(userIds);
     },
-    enabled: !!userIds && userIds.length > 0,
+    enabled: userIds ? userIds.length > 0 : !!currentUser?.id,
   });
 
   const users = useMemo(() => {

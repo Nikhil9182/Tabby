@@ -138,8 +138,9 @@ export function Navbar() {
       .forEach((settle) => {
         const fromUser = (users || []).find((u) => u.id === settle.fromUserId);
         const toUser = (users || []).find((u) => u.id === settle.toUserId);
-        const fromName = settle.fromUserId === currentUserId ? "You" : fromUser?.name || "User";
-        const toName = settle.toUserId === currentUserId ? "you" : toUser?.name || "User";
+        const fromName = settle.fromUserId === currentUserId ? "You" : fromUser?.name || "Someone";
+        const toName = settle.toUserId === currentUserId ? "you" : toUser?.name || "someone";
+        const otherUserId = settle.fromUserId === currentUserId ? settle.toUserId : settle.fromUserId;
 
         const dateStr = settle.createdAt || settle.settlementDate;
         list.push({
@@ -150,7 +151,8 @@ export function Navbar() {
           amount: formatMoney(settle.amountMinor, settle.currency),
           timestamp: dateStr,
           timeLabel: formatRelativeDate(dateStr),
-          link: `/settlements`,
+          // Open where the payment lives: its group, or the friend's page
+          link: settle.groupId ? `/groups/${settle.groupId}?tab=balances` : `/friends?friendId=${otherUserId}`,
         });
       });
 
@@ -161,6 +163,13 @@ export function Navbar() {
   }, [expenses, settlements, groups, users, currentUserId]);
 
   const hasNotifications = notifications.length > 0 || pendingIncoming.length > 0;
+
+  // Close the activity panel whenever one of its entries is opened
+  const [isActivityOpen, setIsActivityOpen] = useState(false);
+  const openFromActivity = (link: string) => {
+    setIsActivityOpen(false);
+    navigate(link);
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full pt-[env(safe-area-inset-top)] border-b border-border/80 bg-background/90 backdrop-blur-md">
@@ -230,7 +239,7 @@ export function Navbar() {
             </div>
 
             {/* Notification Bell with Activity Dropdown Panel */}
-            <Popover>
+            <Popover open={isActivityOpen} onOpenChange={setIsActivityOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
@@ -267,7 +276,7 @@ export function Navbar() {
 
                 {/* Notifications List */}
                 <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
-                  {pendingIncoming.map(invite => <button key={invite.id} className="block w-full p-4 text-left hover:bg-muted/40" onClick={() => navigate('/friends')}>
+                  {pendingIncoming.map(invite => <button key={invite.id} className="block w-full p-4 text-left hover:bg-muted/40" onClick={() => openFromActivity('/friends')}>
                     <span className="block text-sm font-bold">{invite.inviterName || invite.invitedEmail} sent an invitation for {invite.groupName}</span>
                     <span className="text-xs text-muted-foreground">Review and accept or decline in Friends</span>
                   </button>)}
@@ -276,7 +285,7 @@ export function Navbar() {
                       return (
                         <div
                           key={n.id}
-                          onClick={() => navigate(n.link)}
+                          onClick={() => openFromActivity(n.link)}
                           className="p-3.5 hover:bg-muted/40 transition-colors cursor-pointer flex items-start gap-3 group"
                         >
                           <div
@@ -332,7 +341,7 @@ export function Navbar() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigate("/settlements")}
+                    onClick={() => openFromActivity("/settlements")}
                     className="w-full text-xs font-bold text-[#0055FF] hover:text-[#0055FF] h-8 rounded-xl"
                   >
                     <span>View all activity</span>
@@ -356,7 +365,7 @@ export function Navbar() {
                 </button>
               </DropdownMenuTrigger>
 
-              <DropdownMenuContent align="end" className="w-56 p-2 rounded-2xl shadow-xl">
+              <DropdownMenuContent align="end" className="w-56 shadow-xl">
                 <DropdownMenuLabel className="font-normal px-2 py-1.5">
                   <div className="flex flex-col space-y-0.5">
                     <p className="text-sm font-bold text-foreground leading-none">{displayName}</p>
