@@ -82,7 +82,7 @@ export function ExpenseNewPage() {
         <CardHeader>
           <CardTitle className="text-base font-semibold">Expense Details</CardTitle>
           <CardDescription>
-            All amounts are securely stored using exact integer minor units (cents).
+            What you paid for, how much, and who it's shared with.
           </CardDescription>
         </CardHeader>
         <CardContent>

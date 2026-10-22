@@ -149,7 +149,7 @@ export function ExpensesPage() {
     <div className="space-y-6 sm:space-y-8 animate-in fade-in-50 duration-300 pb-16">
       <PageHeader
         title="Expenses"
-        description="Review all recorded expenses across direct friend and group ledgers."
+        description="Everything you've spent, with friends and in groups."
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Expenses" },

@@ -409,7 +409,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <h2 className="text-lg font-black tracking-tight text-foreground">In Groups</h2>
-                <p className="text-[11px] text-muted-foreground font-medium">Shared group ledger balances</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Your balance in each group</p>
               </div>
             </div>
             <Link

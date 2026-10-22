@@ -1,7 +1,7 @@
 {
   "name": "Tabby — Expense Splitter",
   "short_name": "Tabby",
-  "description": "Offline-first expense splitting & personal finance app powered by Google Drive",
+  "description": "Split bills with friends and groups. Track who owes whom and settle up easily.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -44,9 +44,9 @@
       "icons": [{ "src": "./icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Settle Balance",
+      "name": "Settle Up",
       "short_name": "Settle",
-      "description": "Record a debt settlement",
+      "description": "Record a payment",
       "url": "./settlements/new",
       "icons": [{ "src": "./icon-192.png", "sizes": "192x192" }]
     }

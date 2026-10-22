@@ -317,7 +317,7 @@ export function ExpenseDetailPage() {
             <span>Created {formatDate(expense.createdAt, 'MMM d, yyyy h:mm a')}</span>
             <div className="flex items-center gap-1">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Saved locally</span>
+              <span>Saved</span>
             </div>
           </div>
         </CardContent>

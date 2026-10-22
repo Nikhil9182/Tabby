@@ -224,7 +224,7 @@ export function GroupForm({ groupId: propGroupId }: GroupFormProps) {
         description={
           isEditing
             ? 'Update group settings, currency, and members.'
-            : 'Create a shared group ledger to split trip, house, or project expenses.'
+            : 'Create a group to split trip, home or project expenses.'
         }
         onBack={() => navigate(-1)}
       />
@@ -235,7 +235,7 @@ export function GroupForm({ groupId: propGroupId }: GroupFormProps) {
           <CardHeader className="p-5 pb-3">
             <CardTitle className="text-base sm:text-lg">Group Information</CardTitle>
             <CardDescription>
-              Name and primary currency used for calculations and debt simplification.
+              The group's name and the currency balances are shown in.
             </CardDescription>
           </CardHeader>
 

@@ -2,20 +2,42 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  ShieldCheck,
-  Zap,
+  ArrowRightLeft,
+  Globe,
+  Receipt,
+  Sparkles,
   Users,
-  Database,
-  Calculator,
   RefreshCw,
   AlertCircle,
   Lock,
 } from "lucide-react";
 import { TabbyIcon } from "@/components/common/tabby-icon";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { checkSupabaseConfig } from "@/lib/supabase";
+
+const FEATURES = [
+  {
+    icon: Receipt,
+    title: "Add expenses in seconds",
+    description: "Split equally, by exact amounts, by percentage, or by shares. Tabby does the maths.",
+  },
+  {
+    icon: Users,
+    title: "Friends and groups",
+    description: "Keep a running tab with one friend, or create a group for a trip, a flat, or an office lunch.",
+  },
+  {
+    icon: ArrowRightLeft,
+    title: "Settle up easily",
+    description: "See who owes what at a glance, and record payments when you're square.",
+  },
+  {
+    icon: Globe,
+    title: "Any currency",
+    description: "Spending abroad? Add expenses in any currency and see your totals in yours.",
+  },
+];
 
 export function WelcomePage() {
   const navigate = useNavigate();
@@ -63,17 +85,17 @@ export function WelcomePage() {
       {/* Hero Section */}
       <main className="max-w-4xl w-full mx-auto my-12 text-center space-y-8 animate-in fade-in-50 duration-500">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-accent text-accent-foreground text-xs font-semibold">
-          <Zap className="h-3.5 w-3.5 text-primary" />
-          Realtime Multi-User &bull; PostgreSQL Security &bull; Exact Split Math
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          Free &bull; Works on your phone and laptop
         </div>
 
         <div className="space-y-4 max-w-2xl mx-auto">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-foreground">
-            Fair expense splitting, centralized &amp; realtime
+            Split bills with friends, minus the awkward maths
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-            Tabby tracks shared expenses, roommates, group trips, and settlements.
-            Your financial records are secured with PostgreSQL Row Level Security and kept in sync across all devices.
+            Add what you spent, pick who it was for, and Tabby keeps a running tally of who owes whom.
+            Perfect for trips, flatmates, dinners out, or anything you share.
           </p>
         </div>
 
@@ -138,68 +160,29 @@ export function WelcomePage() {
 
           <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-2">
             <Lock className="h-3.5 w-3.5" />
-            Signed in via Supabase Auth &bull; Google credentials are never stored by Tabby
+            We never see your Google password.
           </p>
         </div>
 
-        {/* Feature Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-left pt-8">
-          <Card className="rounded-2xl border-border bg-card/60 backdrop-blur-xs">
-            <CardHeader className="pb-2">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
-                <Calculator className="h-5 w-5" />
+        {/* What you can do */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left pt-8">
+          {FEATURES.map(({ icon: Icon, title, description }) => (
+            <div key={title} className="flex gap-4 rounded-xl border border-border/60 bg-card p-5">
+              <div className="h-10 w-10 shrink-0 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <Icon className="h-5 w-5" />
               </div>
-              <CardTitle className="text-base">Exact Minor Units</CardTitle>
-              <CardDescription>
-                Calculations use integer cents to prevent floating-point rounding errors in splits.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Equal, percentage, exact amount, and shares splitting with deterministic remainder penny distribution.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl border-border bg-card/60 backdrop-blur-xs">
-            <CardHeader className="pb-2">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
-                <ShieldCheck className="h-5 w-5" />
+              <div className="space-y-1">
+                <h2 className="text-base font-semibold text-foreground">{title}</h2>
+                <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
               </div>
-              <CardTitle className="text-base">PostgreSQL Row Security</CardTitle>
-              <CardDescription>
-                Strict database authorization guarantees personal expenses and groups remain private.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Only authenticated members of a group can read its financial ledgers. No unauthorized data leaks.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl border-border bg-card/60 backdrop-blur-xs">
-            <CardHeader className="pb-2">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
-                <Users className="h-5 w-5" />
-              </div>
-              <CardTitle className="text-base">Realtime Collaboration</CardTitle>
-              <CardDescription>
-                Multi-user updates broadcast seamlessly to all active group members.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Shared expenses and settlements appear instantly across phones and laptops without refreshing.
-              </p>
-            </CardContent>
-          </Card>
+            </div>
+          ))}
         </div>
       </main>
 
       {/* Footer */}
       <footer className="max-w-5xl w-full mx-auto text-center text-xs text-muted-foreground pt-8 border-t border-border/50">
-        Tabby &bull; Centralized Expense Management &bull; {new Date().getFullYear()} &bull;{' '}
+        Tabby &bull; Split expenses with friends &bull; {new Date().getFullYear()} &bull;{' '}
         <a
           href={`${import.meta.env.BASE_URL}privacy.html`}
           className="underline-offset-4 hover:underline hover:text-foreground"

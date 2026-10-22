@@ -127,8 +127,8 @@ export function SettlementNewPage() {
   return (
     <div className="max-w-xl mx-auto space-y-6 animate-in fade-in-50 duration-300">
       <PageHeader
-        title="Record Settlement"
-        description="Record a direct debt payment to balance the ledger."
+        title="Settle Up"
+        description="Record money you paid someone, or that someone paid you."
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Settlements", href: "/settlements" },
@@ -138,9 +138,9 @@ export function SettlementNewPage() {
 
       <Card className="rounded-3xl border-border bg-card shadow-xs">
         <CardHeader className="pb-4">
-          <CardTitle className="text-base font-bold">Settlement Details</CardTitle>
+          <CardTitle className="text-base font-bold">Payment details</CardTitle>
           <CardDescription>
-            Settlements directly balance user obligations without creating new expense shares.
+            This reduces what's owed. It doesn't add a new expense.
           </CardDescription>
         </CardHeader>
         <CardContent>

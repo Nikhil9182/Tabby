@@ -99,7 +99,7 @@ export function SettlementsPage() {
     <div className="space-y-6 sm:space-y-8 pb-16 animate-in fade-in-50 duration-300">
       <PageHeader
         title="Activity & Settlements"
-        description="History of debt repayments, direct transfers, and settlements across all ledgers."
+        description="Every payment between you, your friends and your groups."
         actions={
           <Button
             onClick={() => navigate('/settlements/new')}
@@ -129,7 +129,7 @@ export function SettlementsPage() {
               <Users className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
               <SelectValue placeholder="All Groups" />
             </SelectTrigger>
-            <SelectContent className="rounded-2xl">
+            <SelectContent>
               <SelectItem value="all">All Groups</SelectItem>
               {groups.map((g) => (
                 <SelectItem key={g.id} value={g.id}>
@@ -144,7 +144,7 @@ export function SettlementsPage() {
               <Calendar className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
               <SelectValue placeholder="All Time" />
             </SelectTrigger>
-            <SelectContent className="rounded-2xl">
+            <SelectContent>
               <SelectItem value="all">All Time</SelectItem>
               <SelectItem value="this-month">This Month</SelectItem>
               <SelectItem value="last-30-days">Last 30 Days</SelectItem>

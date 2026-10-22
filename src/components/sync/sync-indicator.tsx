@@ -160,10 +160,10 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
               </div>
               <div>
                 <h4 className="text-sm font-semibold tracking-tight text-foreground">
-                  Database Connection
+                  Sync
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  {syncStatus.isOnline ? "Connected (Supabase Cloud)" : "Offline (Network disconnected)"}
+                  {syncStatus.isOnline ? "Online. Changes save automatically." : "You're offline. Check your internet."}
                 </p>
               </div>
             </div>
@@ -192,9 +192,9 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
             </div>
 
             <div className="p-2.5 rounded-xl bg-muted/40 border border-border/50">
-              <span className="text-muted-foreground block text-[11px]">Realtime</span>
+              <span className="text-muted-foreground block text-[11px]">Live updates</span>
               <span className="font-medium text-foreground block mt-0.5">
-                {syncStatus.isOnline ? "Active" : "Paused"}
+                {syncStatus.isOnline ? "On" : "Paused"}
               </span>
             </div>
           </div>
@@ -204,9 +204,9 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-primary shrink-0" />
               <div className="truncate">
-                <span className="font-medium text-foreground block">Supabase Auth</span>
-                <span className="text-muted-foreground text-[11px] block capitalize">
-                  {authState === "connected" ? "Authenticated" : "Not connected"}
+                <span className="font-medium text-foreground block">Account</span>
+                <span className="text-muted-foreground text-[11px] block">
+                  {authState === "connected" ? "Signed in" : "Not signed in"}
                 </span>
               </div>
             </div>

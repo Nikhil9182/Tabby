@@ -264,17 +264,17 @@ export function SettingsPage() {
         <CardHeader className="p-5 pb-3">
           <CardTitle className="text-base sm:text-lg flex items-center gap-2">
             <Database className="h-4 w-4 text-primary" />
-            <span>Supabase Cloud Database</span>
+            <span>Account</span>
           </CardTitle>
           <CardDescription>
-            All financial records, groups, and settlements are synchronized with PostgreSQL.
+            Your expenses, groups and payments are saved to your account and stay in sync on every device.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-5 pt-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 rounded-xl border border-border/40 bg-muted/20 gap-3">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-sm">Authentication Session</span>
+                <span className="font-semibold text-sm">Google account</span>
                 <Badge
                   variant={isAuthenticated ? 'default' : 'outline'}
                   className="text-[10px] capitalize"
@@ -285,7 +285,7 @@ export function SettingsPage() {
               <p className="text-xs text-muted-foreground break-words">
                 {isAuthenticated
                   ? `Signed in as ${authUser?.email || displayEmail}`
-                  : 'Please sign in to access your shared financial records.'}
+                  : 'Sign in to see your expenses and balances.'}
               </p>
             </div>
 
@@ -319,7 +319,7 @@ export function SettingsPage() {
             className="gap-1.5"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isSyncing && 'animate-spin')} />
-            <span>{isSyncing ? 'Refreshing...' : 'Refresh Server Data'}</span>
+            <span>{isSyncing ? 'Refreshing...' : 'Refresh now'}</span>
           </Button>
         </CardContent>
       </Card>
@@ -329,10 +329,10 @@ export function SettingsPage() {
         <CardHeader className="p-5 pb-3">
           <CardTitle className="text-base sm:text-lg flex items-center gap-2">
             <Download className="h-4 w-4 text-primary" />
-            <span>Data Export &amp; Backup</span>
+            <span>Download your data</span>
           </CardTitle>
           <CardDescription>
-            Download your raw financial data in CSV or JSON format.
+            Get a spreadsheet of your expenses, or a full backup file.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-5 pt-2 space-y-4">
@@ -344,7 +344,7 @@ export function SettingsPage() {
               className="gap-1.5"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>Export Expenses (CSV)</span>
+              <span>Expenses spreadsheet (CSV)</span>
             </Button>
 
             <Button
@@ -354,7 +354,7 @@ export function SettingsPage() {
               className="gap-1.5"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>Full Data Backup (JSON)</span>
+              <span>Full backup</span>
             </Button>
           </div>
         </CardContent>
@@ -365,7 +365,7 @@ export function SettingsPage() {
         <div className="flex items-center justify-between p-4 rounded-xl border border-border/40 bg-muted/10">
           <div>
             <p className="font-semibold text-foreground">Tabby</p>
-            <p>Version 1.0.0 &bull; Supabase PostgreSQL</p>
+            <p>Version 1.0.0</p>
             <a
               href={`${import.meta.env.BASE_URL}privacy.html`}
               className="underline-offset-4 hover:underline hover:text-foreground"
@@ -373,16 +373,12 @@ export function SettingsPage() {
               Privacy Policy
             </a>
           </div>
-          <Badge variant="outline" className="font-mono text-[10px]">
-            Cloud RLS
-          </Badge>
         </div>
 
         <p className="flex items-start gap-1.5 px-1">
           <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
           <span>
-            <strong>Security Guarantee:</strong> Financial data is protected by PostgreSQL Row Level Security.
-            Only authorized group members can read and update shared ledgers.
+            Your expenses are private. Only the friends and group members you share them with can see them.
           </span>
         </p>
       </div>
