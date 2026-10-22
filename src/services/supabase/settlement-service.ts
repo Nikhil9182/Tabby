@@ -1,10 +1,13 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
+import { friendService } from './friend-service';
 
 export type DbSettlement = Database['public']['Tables']['settlements']['Row'];
 
 export interface CreateSettlementInput {
-  groupId: string;
+  groupId?: string;
+  friendId?: string;
+  contextType?: 'direct' | 'group';
   fromUserId: string;
   toUserId: string;
   amountMinor: number;
@@ -16,9 +19,9 @@ export interface CreateSettlementInput {
 
 class SettlementService {
   /**
-   * Fetches settlements for a group or all accessible groups
+   * Fetches settlements with optional group, friend, or context filter
    */
-  async getSettlements(groupId?: string): Promise<DbSettlement[]> {
+  async getSettlements(groupId?: string, contextType?: 'direct' | 'group'): Promise<DbSettlement[]> {
     let query = (supabase.from('settlements') as any)
       .select('*')
       .is('deleted_at', null)
@@ -26,6 +29,10 @@ class SettlementService {
 
     if (groupId) {
       query = query.eq('group_id', groupId);
+    }
+
+    if (contextType) {
+      query = query.eq('context_type', contextType);
     }
 
     const { data, error } = await query;
@@ -38,7 +45,7 @@ class SettlementService {
   }
 
   /**
-   * Records a new settlement in Supabase
+   * Records a new settlement in Supabase (direct friend or group)
    */
   async createSettlement(input: CreateSettlementInput): Promise<DbSettlement> {
     const { data: { user } } = await supabase.auth.getUser();
@@ -52,27 +59,87 @@ class SettlementService {
       throw new Error('Settlement amount must be positive.');
     }
 
-    const { data, error } = await (supabase.from('settlements') as any)
-      .insert({
-        group_id: input.groupId,
-        from_user_id: input.fromUserId,
-        to_user_id: input.toUserId,
-        amount_minor: input.amountMinor,
-        currency: input.currency.toUpperCase(),
-        notes: input.notes?.trim() || null,
-        settlement_date: input.settlementDate || new Date().toISOString(),
-        exchange_rate: input.exchangeRate || 1.0,
-        created_by: user.id,
-      })
-      .select()
-      .single();
+    const isDirect = input.contextType === 'direct' || (!input.groupId && !!input.friendId) || !input.groupId;
 
-    if (error) {
-      console.error('Error creating settlement:', error);
-      throw new Error(error.message);
+    if (isDirect) {
+      const otherUser = input.fromUserId === user.id ? input.toUserId : input.fromUserId;
+      const friendId = input.friendId || otherUser;
+
+      // Try RPC first
+      try {
+        const { data, error } = await (supabase.rpc as any)('record_direct_settlement', {
+          p_friend_id: friendId,
+          p_amount_minor: input.amountMinor,
+          p_currency: input.currency.toUpperCase(),
+          p_settlement_date: input.settlementDate || new Date().toISOString(),
+          p_notes: input.notes?.trim() || null,
+          p_payer_id: input.fromUserId,
+          p_recipient_id: input.toUserId,
+        });
+
+        if (!error && data) {
+          return data as DbSettlement;
+        }
+      } catch {
+        // Fallback to direct table write if RPC not yet migrated
+      }
+
+      // Fallback: resolve friendship and insert
+      let friendshipId: string | null = null;
+      try {
+        friendshipId = await friendService.getOrCreateFriendship(input.fromUserId, input.toUserId);
+      } catch {
+        // Continue if table doesn't exist
+      }
+
+      const { data, error } = await (supabase.from('settlements') as any)
+        .insert({
+          context_type: 'direct',
+          friendship_id: friendshipId,
+          group_id: null,
+          from_user_id: input.fromUserId,
+          to_user_id: input.toUserId,
+          amount_minor: input.amountMinor,
+          currency: input.currency.toUpperCase(),
+          notes: input.notes?.trim() || null,
+          settlement_date: input.settlementDate || new Date().toISOString(),
+          exchange_rate: input.exchangeRate || 1.0,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating direct settlement:', error);
+        throw new Error(error.message);
+      }
+
+      return data as DbSettlement;
+    } else {
+      // Group settlement
+      const { data, error } = await (supabase.from('settlements') as any)
+        .insert({
+          context_type: 'group',
+          group_id: input.groupId,
+          from_user_id: input.fromUserId,
+          to_user_id: input.toUserId,
+          amount_minor: input.amountMinor,
+          currency: input.currency.toUpperCase(),
+          notes: input.notes?.trim() || null,
+          settlement_date: input.settlementDate || new Date().toISOString(),
+          exchange_rate: input.exchangeRate || 1.0,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating group settlement:', error);
+        throw new Error(error.message);
+      }
+
+      return data as DbSettlement;
     }
-
-    return data as DbSettlement;
   }
 
   /**

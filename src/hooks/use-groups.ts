@@ -197,13 +197,13 @@ export function useGroup(groupId: string) {
 
   const { data: settlements = [], isLoading: isLoadingSettlements } = useQuery<Settlement[]>({
     queryKey: ['settlements', { groupId }],
-    queryFn: async () => {
+    queryFn: async (): Promise<Settlement[]> => {
       const rawSettlements = await settlementService.getSettlements(groupId);
       return rawSettlements.map((s) => ({
         id: s.id,
         sourceType: 'group',
-        sourceId: s.group_id,
-        groupId: s.group_id,
+        sourceId: s.group_id || groupId || 'group',
+        groupId: s.group_id || groupId,
         fromUserId: s.from_user_id,
         toUserId: s.to_user_id,
         amountMinor: s.amount_minor,
@@ -304,8 +304,8 @@ export function useGroupBalances(groupId: string) {
 
       const settlements: Settlement[] = rawSettlements.map((s) => ({
         id: s.id,
-        sourceId: s.group_id,
-        groupId: s.group_id,
+        sourceId: s.group_id || 'group',
+        groupId: s.group_id || undefined,
         fromUserId: s.from_user_id,
         toUserId: s.to_user_id,
         amountMinor: s.amount_minor,

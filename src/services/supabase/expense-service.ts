@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
 import type { SplitType } from '@/domain/models/types';
+import { friendService } from './friend-service';
 
 export type DbGroupExpense = Database['public']['Tables']['group_expenses']['Row'];
 export type DbPersonalExpense = Database['public']['Tables']['personal_expenses']['Row'];
@@ -23,8 +24,10 @@ export interface CreateExpenseServiceInput {
   exchangeRateSource?: string;
   reportingAmountMinor?: number;
   paidBy: string;
-  sourceType?: 'group' | 'personal';
+  sourceType?: 'group' | 'personal' | 'direct';
+  contextType?: 'group' | 'personal' | 'direct';
   groupId?: string;
+  friendId?: string;
   categoryId?: string;
   notes?: string;
   expenseDate?: string;
@@ -34,7 +37,9 @@ export interface CreateExpenseServiceInput {
 
 export interface ExpenseFilters {
   groupId?: string;
-  sourceType?: 'group' | 'personal';
+  friendId?: string;
+  sourceType?: 'group' | 'personal' | 'direct';
+  contextType?: 'group' | 'personal' | 'direct';
   categoryId?: string;
   paidBy?: string;
   startDate?: string;
@@ -44,9 +49,12 @@ export interface ExpenseFilters {
 
 export interface UnifiedExpense {
   id: string;
-  sourceType: 'group' | 'personal';
+  sourceType: 'group' | 'personal' | 'direct';
+  contextType: 'group' | 'personal' | 'direct';
   sourceId: string;
   groupId?: string;
+  friendshipId?: string;
+  friendId?: string;
   description: string;
   notes?: string;
   categoryId?: string;
@@ -79,8 +87,8 @@ class ExpenseService {
 
     const results: UnifiedExpense[] = [];
 
-    // 1. Group Expenses
-    if (!filters?.sourceType || filters.sourceType === 'group') {
+    // 1. Group & Direct Shared Expenses
+    if (!filters?.sourceType || filters.sourceType === 'group' || filters.sourceType === 'direct') {
       let query = (supabase.from('group_expenses') as any)
         .select(`
           *,
@@ -93,6 +101,9 @@ class ExpenseService {
 
       if (filters?.groupId) {
         query = query.eq('group_id', filters.groupId);
+      }
+      if (filters?.contextType) {
+        query = query.eq('context_type', filters.contextType);
       }
       if (filters?.categoryId) {
         query = query.eq('category_id', filters.categoryId);
@@ -113,18 +124,31 @@ class ExpenseService {
       const { data: groupExps, error: groupError } = await query;
 
       if (groupError) {
-        console.error('Error fetching group expenses:', groupError);
+        console.error('Error fetching group/direct expenses:', groupError);
         throw new Error(groupError.message);
       }
 
       if (groupExps) {
         for (const exp of groupExps) {
           const participantIds = (exp.expense_splits || []).map((s: any) => s.user_id);
+          const isDirect = exp.context_type === 'direct' || (!exp.group_id && exp.friendship_id);
+          const otherParticipant = isDirect
+            ? participantIds.find((id: string) => id !== user.id) || (exp.paid_by !== user.id ? exp.paid_by : '')
+            : undefined;
+
+          // If filtering by specific friend in direct context
+          if (filters?.friendId && isDirect && otherParticipant !== filters.friendId && exp.paid_by !== filters.friendId) {
+            continue;
+          }
+
           results.push({
             id: exp.id,
-            sourceType: 'group',
-            sourceId: exp.group_id,
-            groupId: exp.group_id,
+            sourceType: isDirect ? 'direct' : 'group',
+            contextType: isDirect ? 'direct' : 'group',
+            sourceId: isDirect ? (exp.friendship_id || otherParticipant || '') : (exp.group_id || ''),
+            groupId: isDirect ? undefined : exp.group_id,
+            friendshipId: exp.friendship_id || undefined,
+            friendId: otherParticipant,
             description: exp.description,
             notes: exp.notes || undefined,
             categoryId: exp.category_id || undefined,
@@ -150,8 +174,8 @@ class ExpenseService {
       }
     }
 
-    // 2. Personal Expenses (only if not restricted to a specific group)
-    if (!filters?.groupId && (!filters?.sourceType || filters.sourceType === 'personal')) {
+    // 2. Personal Expenses (only if not restricted to a specific group or friend)
+    if (!filters?.groupId && !filters?.friendId && (!filters?.sourceType || filters.sourceType === 'personal')) {
       let personalQuery = (supabase.from('personal_expenses') as any)
         .select('*')
         .eq('owner_id', user.id)
@@ -179,11 +203,12 @@ class ExpenseService {
           results.push({
             id: exp.id,
             sourceType: 'personal',
-            sourceId: exp.owner_id,
+            contextType: 'personal',
+            sourceId: user.id,
             description: exp.description,
             notes: exp.notes || undefined,
             categoryId: exp.category_id || undefined,
-            paidBy: exp.owner_id,
+            paidBy: user.id,
             originalAmountMinor: exp.amount_minor,
             amountMinor: exp.amount_minor,
             originalCurrency: exp.currency,
@@ -191,28 +216,28 @@ class ExpenseService {
             reportingCurrency: exp.currency,
             reportingAmountMinor: exp.amount_minor,
             splitType: 'equal',
-            participants: [exp.owner_id],
+            participants: [user.id],
             expenseDate: exp.expense_date,
             createdAt: exp.created_at,
             updatedAt: exp.updated_at,
-            createdBy: exp.owner_id,
+            createdBy: user.id,
             deletedAt: exp.deleted_at,
           });
         }
       }
     }
 
-    // Sort descending by expenseDate
-    return results.sort((a, b) => new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime());
+    return results;
   }
 
   /**
-   * Fetches splits for an array of expense IDs
+   * Fetches splits for one or more expenses
    */
   async getSplitsForExpenses(expenseIds: string[]): Promise<Record<string, DbExpenseSplit[]>> {
-    if (expenseIds.length === 0) return {};
+    if (!expenseIds || expenseIds.length === 0) return {};
 
-    const { data: splits, error } = await (supabase.from('expense_splits') as any)
+    const { data: splits, error } = await (supabase
+      .from('expense_splits') as any)
       .select('*')
       .in('group_expense_id', expenseIds);
 
@@ -234,12 +259,106 @@ class ExpenseService {
 
   /**
    * Creates an expense atomically with splits in Supabase
+   * Supports: Direct Friend Expense, Group Expense, Personal Expense
    */
   async createExpense(input: CreateExpenseServiceInput): Promise<{ id: string; description: string }> {
-    const isGroup = !!input.groupId && input.sourceType !== 'personal';
+    const isDirect = input.contextType === 'direct' || input.sourceType === 'direct' || (!input.groupId && !!input.friendId);
+    const isGroup = (input.contextType === 'group' || input.sourceType === 'group' || !!input.groupId) && !isDirect;
 
-    if (isGroup && input.groupId) {
-      // Call PostgreSQL RPC for atomic transaction
+    if (isDirect) {
+      // 1. DIRECT FRIEND EXPENSE
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const otherUserId = input.friendId || input.splits.find((s) => s.userId !== user.id)?.userId || input.paidBy;
+      if (!otherUserId || otherUserId === user.id) {
+        throw new Error('A direct friend expense requires a valid friend participant.');
+      }
+
+      // Try RPC first
+      try {
+        const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('create_direct_expense_with_splits', {
+          p_friend_id: otherUserId,
+          p_description: input.description.trim(),
+          p_notes: input.notes?.trim() || null,
+          p_category_id: input.categoryId || null,
+          p_paid_by: input.paidBy,
+          p_amount_minor: input.amountMinor,
+          p_currency: input.currency.toUpperCase(),
+          p_reporting_currency: (input.reportingCurrency || input.currency).toUpperCase(),
+          p_exchange_rate: input.exchangeRate || 1.0,
+          p_exchange_rate_date: input.exchangeRateDate || null,
+          p_exchange_rate_source: input.exchangeRateSource || 'identity',
+          p_reporting_amount_minor: input.reportingAmountMinor ?? input.amountMinor,
+          p_split_type: input.splitType || 'equal',
+          p_expense_date: input.expenseDate || new Date().toISOString(),
+          p_splits: input.splits.map((s) => ({
+            user_id: s.userId,
+            share_minor: s.shareMinor,
+            weight: s.weight || null,
+            percentage_basis_points: s.percentageBasisPoints || null,
+          })),
+        });
+
+        if (!rpcError && rpcData?.expense) {
+          return {
+            id: rpcData.expense.id,
+            description: rpcData.expense.description,
+          };
+        }
+      } catch {
+        // Fallback to direct insertion if RPC migration is still pending
+      }
+
+      // Direct Table Fallback
+      let friendshipId: string | null = null;
+      try {
+        friendshipId = await friendService.getOrCreateFriendship(user.id, otherUserId);
+      } catch {
+        // Continue
+      }
+
+      const { data: expData, error: expError } = await (supabase.from('group_expenses') as any)
+        .insert({
+          context_type: 'direct',
+          friendship_id: friendshipId,
+          group_id: null,
+          description: input.description.trim(),
+          notes: input.notes?.trim() || null,
+          category_id: input.categoryId || null,
+          paid_by: input.paidBy,
+          amount_minor: input.amountMinor,
+          currency: input.currency.toUpperCase(),
+          reporting_currency: (input.reportingCurrency || input.currency).toUpperCase(),
+          exchange_rate: input.exchangeRate || 1.0,
+          exchange_rate_date: input.exchangeRateDate || null,
+          exchange_rate_source: input.exchangeRateSource || 'identity',
+          reporting_amount_minor: input.reportingAmountMinor ?? input.amountMinor,
+          split_type: input.splitType || 'equal',
+          expense_date: input.expenseDate || new Date().toISOString(),
+          created_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (expError) throw new Error(expError.message);
+
+      const splitsToInsert = input.splits.map((s) => ({
+        group_expense_id: expData.id,
+        user_id: s.userId,
+        share_minor: s.shareMinor,
+        weight: s.weight || null,
+        percentage_basis_points: s.percentageBasisPoints || null,
+      }));
+
+      await (supabase.from('expense_splits') as any).insert(splitsToInsert);
+
+      return {
+        id: expData.id,
+        description: expData.description,
+      };
+    } else if (isGroup && input.groupId) {
+      // 2. GROUP EXPENSE
       const { data, error } = await (supabase.rpc as any)('create_group_expense_with_splits', {
         p_group_id: input.groupId,
         p_description: input.description.trim(),
@@ -274,7 +393,7 @@ class ExpenseService {
         description: res.expense.description,
       };
     } else {
-      // Personal expense
+      // 3. PERSONAL EXPENSE
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
@@ -303,7 +422,7 @@ class ExpenseService {
   }
 
   /**
-   * Deletes an expense (checks group_expenses first, then personal_expenses)
+   * Deletes an expense
    */
   async deleteExpense(id: string): Promise<void> {
     const { error: groupError } = await (supabase.from('group_expenses') as any)

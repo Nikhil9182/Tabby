@@ -51,9 +51,9 @@ export interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Overview", to: "/dashboard" },
-  { label: "Expenses", to: "/expenses" },
   { label: "Friends", to: "/friends" },
   { label: "Groups", to: "/groups" },
+  { label: "Expenses", to: "/expenses" },
   { label: "Reports", to: "/reports" },
 ];
 

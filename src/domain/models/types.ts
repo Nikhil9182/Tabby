@@ -33,9 +33,10 @@ export type MemberRole = 'owner' | 'admin' | 'member';
 export type MembershipStatus = 'active' | 'invited' | 'removed';
 
 /**
- * Scope/source type for entities (personal workspace or shared group).
+ * Scope/source type for entities (personal workspace, shared group, or direct 1-to-1 friend).
  */
-export type SourceType = 'personal' | 'group';
+export type SourceType = 'personal' | 'group' | 'direct';
+export type ExpenseContext = 'direct' | 'group' | 'personal';
 
 /**
  * Category scope: personal (user custom), group (group custom), or system (predefined).
@@ -225,7 +226,10 @@ export interface Expense {
   id: string;
   sourceType: SourceType;
   sourceId: string;
+  contextType?: ExpenseContext;
   groupId?: string;
+  friendshipId?: string;
+  friendId?: string;
   description: string;
   notes?: string;
   categoryId?: string;
@@ -336,8 +340,11 @@ export const expenseSplitSchema: z.ZodType<ExpenseSplit> = z.object({
 export interface Settlement {
   id: string;
   sourceType?: SourceType;
-  sourceId: string;
+  sourceId?: string;
+  contextType?: 'direct' | 'group';
   groupId?: string;
+  friendshipId?: string;
+  friendId?: string;
   fromUserId: string;
   toUserId: string;
   amountMinor: number;
@@ -358,7 +365,7 @@ export interface Settlement {
 export const settlementSchema: z.ZodType<Settlement> = z.object({
   id: z.string().min(1, 'Settlement ID is required'),
   sourceType: sourceTypeSchema.optional(),
-  sourceId: z.string().min(1, 'Source ID is required'),
+  sourceId: z.string().optional(),
   groupId: z.string().optional(),
   fromUserId: z.string().min(1, 'Payer user ID (fromUserId) is required'),
   toUserId: z.string().min(1, 'Recipient user ID (toUserId) is required'),
@@ -596,4 +603,30 @@ export interface ConflictResolution {
 }
 
 export type { PairwiseBalance } from '../balances/balance-engine';
+
+// ==========================================
+// 15. Friendships & Direct Relations
+// ==========================================
+
+export interface Friendship {
+  id: string;
+  userId1: string;
+  userId2: string;
+  status: 'pending' | 'accepted' | 'blocked';
+  actionUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FriendSummary {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  directBalanceMinor: number; // positive: friend owes current user; negative: current user owes friend; 0: settled
+  currency: string;
+  sharedGroupCount: number;
+  directExpenseCount: number;
+}
+
 

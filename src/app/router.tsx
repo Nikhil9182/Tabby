@@ -51,6 +51,7 @@ export function AppRouter() {
 
               {/* Friends */}
               <Route path="/friends" element={<FriendsPage />} />
+              <Route path="/friends/:friendId" element={<FriendsPage />} />
 
               {/* Settlements & Activity */}
               <Route path="/settlements" element={<SettlementsPage />} />

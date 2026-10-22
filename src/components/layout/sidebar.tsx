@@ -23,11 +23,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/expenses", label: "Expenses", icon: Receipt },
-  { to: "/groups", label: "Groups", icon: Users },
+  { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/friends", label: "Friends", icon: UserCheck },
-  { to: "/settlements", label: "Settlements", icon: ArrowLeftRight },
+  { to: "/groups", label: "Groups", icon: Users },
+  { to: "/expenses", label: "Expenses", icon: Receipt },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
 ];

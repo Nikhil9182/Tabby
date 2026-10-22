@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Users,
   UserPlus,
@@ -14,205 +14,136 @@ import {
   Calendar,
   AlertCircle,
   Check,
+  Search,
+  Mail,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { useCollaboration } from '@/hooks/use-collaboration';
-import { useCurrentUser, useUsers, useGroups, useExpenses, useSettlements, useCurrency } from '@/hooks';
-import { calculateUserBalances } from '@/domain/balances/balance-engine';
+import {
+  useCurrentUser,
+  useExpenses,
+  useSettlements,
+  useCurrency,
+  useFriends,
+} from '@/hooks';
+import { calculateDirectFriendBalance } from '@/domain/balances/balance-engine';
 import { formatMoney } from '@/domain/money/money';
 import { cn } from '@/lib/utils';
 
 export function FriendsPage() {
   const navigate = useNavigate();
+  const routeParams = useParams<{ friendId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const selectedFriendId = searchParams.get('friendId');
+  const selectedFriendId = routeParams.friendId || searchParams.get('friendId');
 
   const { user: currentUser } = useCurrentUser();
   const currentUserId = currentUser?.id || '';
   const ownEmail = (currentUser?.email || '').trim().toLowerCase();
 
-  const { groups } = useGroups();
+  const { friends, isLoading: isLoadingFriends, addFriend, isAdding, refetch: refetchFriends } = useFriends();
   const { expenses, splits } = useExpenses();
   const { settlements, recordSettlement, isRecording } = useSettlements();
   const { defaultCurrency } = useCurrency();
   const curr = defaultCurrency || 'USD';
 
-  const { invitations, sendRequest, respond, cancelRequest, refresh, isBusy, error } = useCollaboration();
+  // Group invitations from collaboration hook
+  const { invitations, respond, cancelRequest, isBusy } = useCollaboration();
 
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [selectedGroupId, setSelectedGroupId] = useState('');
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
   const [localError, setLocalError] = useState('');
 
-  // Settlement dialog state inside Friend Details
+  // Add Friend Modal State
+  const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
+  const [friendEmailInput, setFriendEmailInput] = useState('');
+  const [addFriendError, setAddFriendError] = useState<string | null>(null);
+
+  // Settlement Dialog State inside Friend Details
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleAmount, setSettleAmount] = useState('');
-  const [settleGroupId, setSettleGroupId] = useState('');
   const [settleDate, setSettleDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [settleNotes, setSettleNotes] = useState('');
   const [settleError, setSettleError] = useState<string | null>(null);
 
-  const managedGroups = useMemo(
-    () => groups.filter((g) => g.createdBy === currentUserId && !g.isArchived),
-    [groups, currentUserId]
-  );
-
-  // Compute all unique user IDs for profile fetching
   const allSplitsList = useMemo(() => Object.values(splits).flat(), [splits]);
 
-  const allRelevantUserIds = useMemo(() => {
-    const ids = new Set<string>();
-    groups.forEach((g) => (g.memberIds || []).forEach((m) => ids.add(m)));
-    expenses.forEach((e) => {
-      ids.add(e.paidBy);
-      (splits[e.id] || []).forEach((s) => ids.add(s.userId));
+  // Map each friend to their net direct balance
+  const friendSummaries = useMemo(() => {
+    return friends.map((friend) => {
+      const balance = calculateDirectFriendBalance(
+        currentUserId,
+        friend.id,
+        expenses,
+        allSplitsList,
+        settlements,
+        curr
+      );
+
+      // balance.amountMinor >= 0
+      // If fromUserId === currentUserId, current user owes friend
+      // If fromUserId === friend.id, friend owes current user
+      const isUserDebtor = balance.amountMinor > 0 && balance.fromUserId === currentUserId;
+      const isFriendDebtor = balance.amountMinor > 0 && balance.fromUserId === friend.id;
+      const isSettled = balance.amountMinor === 0;
+
+      return {
+        id: friend.id,
+        name: friend.name || friend.email || 'Friend',
+        email: friend.email,
+        avatarUrl: friend.picture || friend.avatarUrl,
+        balance,
+        isUserDebtor,
+        isFriendDebtor,
+        isSettled,
+        amountMinor: balance.amountMinor,
+      };
     });
-    settlements.forEach((s) => {
-      ids.add(s.fromUserId);
-      ids.add(s.toUserId);
-    });
-    if (currentUserId) ids.add(currentUserId);
-    if (selectedFriendId) ids.add(selectedFriendId);
-    return Array.from(ids);
-  }, [groups, expenses, splits, settlements, currentUserId, selectedFriendId]);
+  }, [friends, currentUserId, expenses, allSplitsList, settlements, curr]);
 
-  const { users } = useUsers(allRelevantUserIds);
-
-  const userMap = useMemo(() => {
-    const map = new Map<string, (typeof users)[0]>();
-    users.forEach((u) => map.set(u.id, u));
-    return map;
-  }, [users]);
-
-  const getUserName = (id: string): string => {
-    if (id === currentUserId || id === 'user_self' || id === 'current_user') {
-      return currentUser?.name || 'You';
-    }
-    const found = userMap.get(id);
-    return found?.name || found?.email || id;
-  };
-
-  // Pairwise balances between current user and all friends
-  const userBalances = useMemo(() => {
-    if (!currentUserId || !expenses || !settlements) return [];
-    return calculateUserBalances(currentUserId, expenses, allSplitsList, settlements).pairwise;
-  }, [currentUserId, expenses, allSplitsList, settlements]);
-
-  // All known friends list (combines pairwise balances with group members)
-  const friendsList = useMemo(() => {
-    const friendMap = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        email: string;
-        avatarUrl?: string;
-        netBalance: number; // positive: friend owes you, negative: you owe friend
-        currency: string;
-        sharedGroups: string[];
-      }
-    >();
-
-    // 1. Add from group members
-    groups.forEach((g) => {
-      (g.memberIds || []).forEach((memberId) => {
-        if (memberId === currentUserId) return;
-        const u = userMap.get(memberId);
-        const name = u?.name || u?.email || memberId;
-        const email = u?.email || '';
-        const existing = friendMap.get(memberId);
-        if (existing) {
-          if (!existing.sharedGroups.includes(g.name)) existing.sharedGroups.push(g.name);
-        } else {
-          friendMap.set(memberId, {
-            id: memberId,
-            name,
-            email,
-            avatarUrl: u?.picture || u?.avatarUrl,
-            netBalance: 0,
-            currency: g.currency || curr,
-            sharedGroups: [g.name],
-          });
-        }
-      });
-    });
-
-    // 2. Overlay pairwise balances
-    userBalances.forEach((b) => {
-      const otherId = b.fromUserId === currentUserId ? b.toUserId : b.fromUserId;
-      if (!otherId || otherId === currentUserId) return;
-
-      const youOwe = b.fromUserId === currentUserId;
-      const net = youOwe ? -b.amountMinor : b.amountMinor;
-      const u = userMap.get(otherId);
-      const name = u?.name || u?.email || otherId;
-
-      const existing = friendMap.get(otherId);
-      if (existing) {
-        existing.netBalance = net;
-        existing.currency = b.currency || curr;
-      } else {
-        friendMap.set(otherId, {
-          id: otherId,
-          name,
-          email: u?.email || '',
-          avatarUrl: u?.picture || u?.avatarUrl,
-          netBalance: net,
-          currency: b.currency || curr,
-          sharedGroups: [],
-        });
-      }
-    });
-
-    return Array.from(friendMap.values());
-  }, [groups, currentUserId, userMap, userBalances, curr]);
-
-  // Selected friend data
+  // Selected friend details
   const selectedFriend = useMemo(() => {
     if (!selectedFriendId) return null;
-    return (
-      friendsList.find((f) => f.id === selectedFriendId) || {
-        id: selectedFriendId,
-        name: getUserName(selectedFriendId),
-        email: userMap.get(selectedFriendId)?.email || '',
-        avatarUrl: userMap.get(selectedFriendId)?.picture || userMap.get(selectedFriendId)?.avatarUrl,
-        netBalance: 0,
-        currency: curr,
-        sharedGroups: [],
-      }
-    );
-  }, [selectedFriendId, friendsList, userMap, curr]);
+    return friendSummaries.find((f) => f.id === selectedFriendId) || null;
+  }, [selectedFriendId, friendSummaries]);
 
-  // Shared expenses between current user and selected friend
-  const sharedExpenses = useMemo(() => {
+  // Filter direct expenses strictly between current user and selected friend
+  const directExpenses = useMemo(() => {
     if (!selectedFriendId || !currentUserId) return [];
     return expenses
       .filter((exp) => {
         if (exp.deletedAt) return false;
+        // Strictly direct context (no group_id)
+        const isDirect = exp.contextType === 'direct' || (!exp.groupId && exp.sourceType !== 'group');
+        if (!isDirect) return false;
+
         const expSplits = splits[exp.id] || [];
         const involvesUser = exp.paidBy === currentUserId || expSplits.some((s) => s.userId === currentUserId);
         const involvesFriend =
-          exp.paidBy === selectedFriendId || expSplits.some((s) => s.userId === selectedFriendId);
+          exp.paidBy === selectedFriendId ||
+          exp.friendId === selectedFriendId ||
+          expSplits.some((s) => s.userId === selectedFriendId);
+
         return involvesUser && involvesFriend;
       })
       .sort((a, b) => new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime());
   }, [selectedFriendId, currentUserId, expenses, splits]);
 
-  // Shared settlements between current user and selected friend
-  const sharedSettlements = useMemo(() => {
+  // Filter direct settlements strictly between current user and selected friend
+  const directSettlements = useMemo(() => {
     if (!selectedFriendId || !currentUserId) return [];
     return settlements
       .filter((s) => {
         if (s.deletedAt) return false;
+        // Strictly direct settlements (no group_id)
+        const isDirect = s.contextType === 'direct' || !s.groupId;
+        if (!isDirect) return false;
+
         return (
           (s.fromUserId === currentUserId && s.toUserId === selectedFriendId) ||
           (s.fromUserId === selectedFriendId && s.toUserId === currentUserId)
@@ -221,92 +152,93 @@ export function FriendsPage() {
       .sort((a, b) => new Date(b.settlementDate).getTime() - new Date(a.settlementDate).getTime());
   }, [selectedFriendId, currentUserId, settlements]);
 
-  const run = async (action: () => Promise<unknown>, success = '') => {
-    setMessage('');
-    setLocalError('');
+  // Add friend handler
+  const handleAddFriendSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddFriendError(null);
+    const clean = friendEmailInput.trim().toLowerCase();
+
+    if (!clean) {
+      setAddFriendError('Please enter an email address.');
+      return;
+    }
+
+    if (clean === ownEmail) {
+      setAddFriendError('You cannot add yourself as a friend.');
+      return;
+    }
+
     try {
-      await action();
-      setMessage(success);
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Request failed. Please retry.');
+      const res = await addFriend(clean);
+      setFriendEmailInput('');
+      setIsAddFriendModalOpen(false);
+      setMessage(`Added ${res.friendProfile.display_name || res.friendProfile.email || 'friend'} as a friend!`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add friend.';
+      setAddFriendError(msg);
     }
   };
 
-  const handleSendInvite = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail.trim() || !selectedGroupId) return;
-
-    void run(async () => {
-      await sendRequest({ email: inviteEmail.trim(), groupId: selectedGroupId });
-      setInviteEmail('');
-    }, 'Group invitation sent successfully!');
-  };
-
-  // Open Settle Modal initialized with exact net balance
+  // Open Settle Modal initialized with exact direct balance
   const handleOpenSettleModal = () => {
-    if (!selectedFriend) return;
+    if (!selectedFriend || selectedFriend.isSettled) return;
     setSettleError(null);
-    const absCents = Math.abs(selectedFriend.netBalance);
-    setSettleAmount((absCents / 100).toFixed(2));
-    // Pick first shared group or first available group
-    const firstGroup = groups.find((g) => g.memberIds?.includes(selectedFriend.id)) || groups[0];
-    setSettleGroupId(firstGroup?.id || '');
+    const absDollars = selectedFriend.amountMinor / 100;
+    setSettleAmount(absDollars.toFixed(2));
     setSettleDate(new Date().toISOString().slice(0, 10));
     setSettleNotes('');
     setIsSettleModalOpen(true);
   };
 
+  // Confirm settlement handler
   const handleConfirmSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFriend) return;
+    if (!selectedFriend || selectedFriend.isSettled) return;
     setSettleError(null);
 
     const amountFloat = parseFloat(settleAmount);
     if (isNaN(amountFloat) || amountFloat <= 0) {
-      setSettleError('Please enter a valid amount greater than 0');
+      setSettleError('Please enter a valid amount greater than 0.');
       return;
     }
 
-    const ledgerId = settleGroupId || groups[0]?.id;
-    if (!ledgerId) {
-      setSettleError('Select or create an active group to record this settlement.');
+    const maxAmount = selectedFriend.amountMinor / 100;
+    if (amountFloat > maxAmount) {
+      setSettleError(`Settlement amount cannot exceed the outstanding balance of ${formatMoney(selectedFriend.amountMinor, curr)}.`);
       return;
     }
 
-    // Determine direction based on net balance
-    // If netBalance < 0: current user owes friend (current user is payer)
-    // If netBalance > 0: friend owes current user (friend is payer)
-    const isUserDebtor = selectedFriend.netBalance < 0;
-    const payerId = isUserDebtor ? currentUserId : selectedFriend.id;
-    const payeeId = isUserDebtor ? selectedFriend.id : currentUserId;
+    // Direction:
+    // If isUserDebtor: You owe friend -> You are payer, Friend is payee
+    // If isFriendDebtor: Friend owes you -> Friend is payer, You are payee
+    const payerId = selectedFriend.isUserDebtor ? currentUserId : selectedFriend.id;
+    const payeeId = selectedFriend.isUserDebtor ? selectedFriend.id : currentUserId;
 
     try {
       await recordSettlement({
-        groupId: ledgerId,
+        friendId: selectedFriend.id,
+        contextType: 'direct',
         fromUserId: payerId,
         toUserId: payeeId,
         amountMinor: Math.round(amountFloat * 100),
-        currency: (selectedFriend.currency || curr).toUpperCase(),
+        currency: curr,
         settlementDate: new Date(settleDate).toISOString(),
         notes: settleNotes.trim() || undefined,
         createdBy: currentUserId,
       });
 
       setIsSettleModalOpen(false);
-      setMessage(`Settlement recorded! Balances between you and ${selectedFriend.name} have been updated.`);
-    } catch (err) {
-      setSettleError(err instanceof Error ? err.message : 'Failed to record settlement');
+      setMessage(`Settlement recorded! Direct balance with ${selectedFriend.name} has been updated.`);
+    } catch (err: unknown) {
+      setSettleError(err instanceof Error ? err.message : 'Failed to record settlement.');
     }
   };
 
   // -------------------------------------------------------------
-  // VIEW 1: FRIEND DETAILS VIEW (Contextual Settle Up)
+  // VIEW 1: FRIEND DETAILS VIEW (1-to-1 Direct Expenses & Settle Up)
   // -------------------------------------------------------------
   if (selectedFriend) {
-    const isUserDebtor = selectedFriend.netBalance < 0;
-    const isSettled = selectedFriend.netBalance === 0;
-    const absAmount = Math.abs(selectedFriend.netBalance);
-    const formattedAmount = formatMoney(absAmount, selectedFriend.currency || curr);
+    const formattedAmount = formatMoney(selectedFriend.amountMinor, curr);
 
     return (
       <div className="space-y-6 pb-16 animate-in fade-in-50 duration-300">
@@ -315,7 +247,13 @@ export function FriendsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setSearchParams({})}
+            onClick={() => {
+              if (routeParams.friendId) {
+                navigate('/friends');
+              } else {
+                setSearchParams({});
+              }
+            }}
             className="rounded-xl text-muted-foreground hover:text-foreground gap-1.5 -ml-2"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -326,7 +264,7 @@ export function FriendsPage() {
         {/* Friend Profile Header Card */}
         <div className="rounded-3xl border bg-card p-6 sm:p-8 shadow-xs relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4 sm:gap-5 min-w-0">
-            <Avatar size="lg" className="h-16 w-16 text-lg font-black border-2 border-border shadow-xs">
+            <Avatar className="h-16 w-16 text-lg font-black border-2 border-border shadow-xs">
               {selectedFriend.avatarUrl && <AvatarImage src={selectedFriend.avatarUrl} alt={selectedFriend.name} />}
               <AvatarFallback className="bg-primary/10 text-primary uppercase">
                 {selectedFriend.name.slice(0, 2)}
@@ -339,25 +277,23 @@ export function FriendsPage() {
               {selectedFriend.email && (
                 <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedFriend.email}</p>
               )}
-              {selectedFriend.sharedGroups.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Shared groups: {selectedFriend.sharedGroups.join(', ')}
-                </p>
-              )}
+              <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">
+                Direct friend tracking
+              </span>
             </div>
           </div>
 
           {/* Contextual Actions: Add Expense & Settle Up */}
           <div className="flex items-center gap-3 flex-wrap">
             <Button
-              onClick={() => navigate(`/expenses/new?queryFriendId=${selectedFriend.id}`)}
+              onClick={() => navigate(`/expenses/new?friendId=${selectedFriend.id}`)}
               className="h-11 px-5 rounded-2xl bg-primary text-primary-foreground font-bold text-sm gap-2 shadow-xs"
             >
               <Plus className="h-4 w-4 stroke-[2.5]" />
               <span>Add expense</span>
             </Button>
 
-            {!isSettled ? (
+            {!selectedFriend.isSettled ? (
               <Button
                 variant="outline"
                 onClick={handleOpenSettleModal}
@@ -375,44 +311,44 @@ export function FriendsPage() {
           </div>
         </div>
 
-        {/* Net Balance Status Card */}
+        {/* Net Direct Balance Status Card */}
         <div
           className={cn(
             'rounded-3xl border p-6 sm:p-7 shadow-xs relative overflow-hidden transition-all',
-            isSettled && 'bg-emerald-500/[0.04] border-emerald-500/30',
-            !isSettled && isUserDebtor && 'bg-rose-500/[0.05] border-rose-500/30',
-            !isSettled && !isUserDebtor && 'bg-emerald-500/[0.05] border-emerald-500/30'
+            selectedFriend.isSettled && 'bg-emerald-500/[0.04] border-emerald-500/30',
+            !selectedFriend.isSettled && selectedFriend.isUserDebtor && 'bg-rose-500/[0.05] border-rose-500/30',
+            !selectedFriend.isSettled && selectedFriend.isFriendDebtor && 'bg-emerald-500/[0.05] border-emerald-500/30'
           )}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Pairwise Balance
+                Direct Net Balance
               </span>
               <p
                 className={cn(
                   'text-2xl sm:text-3xl font-black tracking-tight',
-                  isSettled && 'text-emerald-600 dark:text-emerald-400',
-                  !isSettled && isUserDebtor && 'text-rose-600 dark:text-rose-400',
-                  !isSettled && !isUserDebtor && 'text-emerald-600 dark:text-emerald-400'
+                  selectedFriend.isSettled && 'text-emerald-600 dark:text-emerald-400',
+                  !selectedFriend.isSettled && selectedFriend.isUserDebtor && 'text-rose-600 dark:text-rose-400',
+                  !selectedFriend.isSettled && selectedFriend.isFriendDebtor && 'text-emerald-600 dark:text-emerald-400'
                 )}
               >
-                {isSettled
+                {selectedFriend.isSettled
                   ? `You're all settled up with ${selectedFriend.name}`
-                  : isUserDebtor
+                  : selectedFriend.isUserDebtor
                   ? `You owe ${selectedFriend.name} ${formattedAmount}`
                   : `${selectedFriend.name} owes you ${formattedAmount}`}
               </p>
               <p className="text-xs text-muted-foreground font-medium">
-                {isSettled
-                  ? 'All shared expenses and debts between the two of you are cleared.'
-                  : isUserDebtor
-                  ? 'You can settle up using any payment method and record it here.'
-                  : `${selectedFriend.name} can pay you back and you can record the settlement.`}
+                {selectedFriend.isSettled
+                  ? 'All direct expenses between the two of you are settled. Group expenses remain tracked in their groups.'
+                  : selectedFriend.isUserDebtor
+                  ? `You can settle this ₹ amount directly with ${selectedFriend.name}.`
+                  : `${selectedFriend.name} can pay you back and you can record the settlement here.`}
               </p>
             </div>
 
-            {!isSettled && (
+            {!selectedFriend.isSettled && (
               <Button
                 onClick={handleOpenSettleModal}
                 className="rounded-2xl font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90 h-10 px-5 shrink-0"
@@ -435,31 +371,31 @@ export function FriendsPage() {
           </p>
         )}
 
-        {/* Shared Expenses Section */}
+        {/* Direct Expenses History */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-black tracking-tight text-foreground">
-              Shared Expenses ({sharedExpenses.length})
+              Direct Expenses ({directExpenses.length})
             </h2>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate(`/expenses/new?queryFriendId=${selectedFriend.id}`)}
+              onClick={() => navigate(`/expenses/new?friendId=${selectedFriend.id}`)}
               className="text-xs font-bold text-[#0055FF]"
             >
-              + Add shared expense
+              + Add direct expense
             </Button>
           </div>
 
-          {sharedExpenses.length === 0 ? (
+          {directExpenses.length === 0 ? (
             <EmptyState
               icon={<Receipt className="h-6 w-6" />}
-              title="No shared expenses yet"
-              description={`Expenses that involve both you and ${selectedFriend.name} will appear here.`}
+              title="No direct expenses yet"
+              description={`Expenses shared directly with ${selectedFriend.name} will appear here.`}
             />
           ) : (
             <div className="divide-y divide-border/40 rounded-3xl border bg-card overflow-hidden shadow-xs">
-              {sharedExpenses.map((exp) => {
+              {directExpenses.map((exp) => {
                 const isPayerYou = exp.paidBy === currentUserId;
                 const payerName = isPayerYou ? 'You' : selectedFriend.name;
                 const expSplits = splits[exp.id] || [];
@@ -505,19 +441,19 @@ export function FriendsPage() {
           )}
         </section>
 
-        {/* Previous Settlements Section */}
+        {/* Direct Settlements History */}
         <section className="space-y-3">
           <h2 className="text-xl font-black tracking-tight text-foreground">
-            Settlement History ({sharedSettlements.length})
+            Direct Settlement History ({directSettlements.length})
           </h2>
 
-          {sharedSettlements.length === 0 ? (
+          {directSettlements.length === 0 ? (
             <div className="p-6 rounded-3xl border bg-card text-center text-xs text-muted-foreground">
-              No previous settlements recorded between you and {selectedFriend.name}.
+              No direct settlements recorded yet between you and {selectedFriend.name}.
             </div>
           ) : (
             <div className="divide-y divide-border/40 rounded-3xl border bg-card overflow-hidden shadow-xs">
-              {sharedSettlements.map((s) => {
+              {directSettlements.map((s) => {
                 const youPaid = s.fromUserId === currentUserId;
                 return (
                   <div key={s.id} className="p-4 flex items-center justify-between gap-4">
@@ -549,12 +485,15 @@ export function FriendsPage() {
           )}
         </section>
 
-        {/* Inline Settle Up Confirmation Modal */}
+        {/* Settle Up Modal */}
         {isSettleModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in-50">
             <div className="bg-card border border-border rounded-3xl max-w-md w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95">
               <div className="flex items-center justify-between border-b pb-3 border-border/60">
-                <h3 className="font-black text-lg text-foreground">Settle Up</h3>
+                <div>
+                  <h3 className="font-black text-lg text-foreground">Settle Up</h3>
+                  <p className="text-xs text-muted-foreground">Direct settlement with {selectedFriend.name}</p>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -572,18 +511,18 @@ export function FriendsPage() {
                 </div>
               )}
 
-              {/* Visual Direction Banner */}
+              {/* Clear Direction Banner: Who is paying whom */}
               <div className="p-4 rounded-2xl bg-muted/50 border border-border flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Avatar size="sm" className="h-8 w-8 text-xs font-bold">
+                  <Avatar className="h-8 w-8 text-xs font-bold">
                     <AvatarFallback className="bg-primary/10 text-primary">
-                      {isUserDebtor ? 'YOU' : selectedFriend.name.slice(0, 2).toUpperCase()}
+                      {selectedFriend.isUserDebtor ? 'YOU' : selectedFriend.name.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0">
                     <p className="text-[10px] text-muted-foreground font-semibold uppercase">Payer</p>
                     <p className="text-xs font-bold text-foreground truncate">
-                      {isUserDebtor ? 'You' : selectedFriend.name}
+                      {selectedFriend.isUserDebtor ? 'You' : selectedFriend.name}
                     </p>
                   </div>
                 </div>
@@ -594,12 +533,12 @@ export function FriendsPage() {
                   <div className="min-w-0">
                     <p className="text-[10px] text-muted-foreground font-semibold uppercase">Recipient</p>
                     <p className="text-xs font-bold text-foreground truncate">
-                      {isUserDebtor ? selectedFriend.name : 'You'}
+                      {selectedFriend.isUserDebtor ? selectedFriend.name : 'You'}
                     </p>
                   </div>
-                  <Avatar size="sm" className="h-8 w-8 text-xs font-bold">
+                  <Avatar className="h-8 w-8 text-xs font-bold">
                     <AvatarFallback className="bg-emerald-500/10 text-emerald-600">
-                      {isUserDebtor ? selectedFriend.name.slice(0, 2).toUpperCase() : 'YOU'}
+                      {selectedFriend.isUserDebtor ? selectedFriend.name.slice(0, 2).toUpperCase() : 'YOU'}
                     </AvatarFallback>
                   </Avatar>
                 </div>
@@ -607,40 +546,26 @@ export function FriendsPage() {
 
               <form onSubmit={handleConfirmSettlement} className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="settle-amount" className="text-xs font-semibold">
-                    Amount ({selectedFriend.currency || curr})
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="settle-amount" className="text-xs font-semibold">
+                      Settlement Amount ({curr})
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground">
+                      Max: {formatMoney(selectedFriend.amountMinor, curr)}
+                    </span>
+                  </div>
                   <Input
                     id="settle-amount"
                     type="number"
                     step="0.01"
                     min="0.01"
+                    max={(selectedFriend.amountMinor / 100).toFixed(2)}
                     value={settleAmount}
                     onChange={(e) => setSettleAmount(e.target.value)}
                     required
-                    className="rounded-xl font-bold"
+                    className="rounded-xl font-bold text-base"
                   />
                 </div>
-
-                {groups.length > 0 && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="settle-group" className="text-xs font-semibold">
-                      Associated Group Ledger
-                    </Label>
-                    <select
-                      id="settle-group"
-                      value={settleGroupId}
-                      onChange={(e) => setSettleGroupId(e.target.value)}
-                      className="w-full rounded-xl border bg-background p-2 text-sm"
-                    >
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
 
                 <div className="space-y-1.5">
                   <Label htmlFor="settle-date" className="text-xs font-semibold">
@@ -696,184 +621,97 @@ export function FriendsPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW 2: FRIENDS LIST & COLLABORATION VIEW
+  // VIEW 2: ALL FRIENDS LIST VIEW (Independent 1-to-1 Tracking)
   // -------------------------------------------------------------
   return (
     <div className="space-y-6 pb-16 animate-in fade-in-50 duration-300">
       <PageHeader
-        title="Friends &amp; Members"
-        description="View your shared balances, review expense histories, and settle up with friends."
+        title="Friends"
+        description="Track one-to-one shared expenses and settlements directly with friends without needing a group."
         actions={
-          <Button variant="outline" disabled={isBusy} onClick={() => void run(refresh, 'Refreshed')}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={isLoadingFriends}
+              onClick={() => void refetchFriends()}
+              className="rounded-xl"
+            >
+              <RefreshCw className={cn('h-4 w-4 mr-2', isLoadingFriends && 'animate-spin')} />
+              Refresh
+            </Button>
+            <Button
+              onClick={() => {
+                setAddFriendError(null);
+                setFriendEmailInput('');
+                setIsAddFriendModalOpen(true);
+              }}
+              className="rounded-xl font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90"
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add friend
+            </Button>
+          </div>
         }
       />
 
-      {/* Invite to Group Form */}
-      {managedGroups.length > 0 && (
-        <form className="rounded-3xl border bg-card p-5 sm:p-6 space-y-3 shadow-xs" onSubmit={handleSendInvite}>
-          <label htmlFor="friend-email" className="font-bold text-base block">
-            Invite member to a group
-          </label>
-          <p className="text-xs text-muted-foreground">
-            Enter their email address to share group expenses, split bills, and track balances.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <select
-              aria-label="Select Group"
-              className="rounded-xl border bg-background px-3 py-2 text-sm font-medium"
-              value={selectedGroupId}
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              required
-            >
-              <option value="">Select a group you manage</option>
-              {managedGroups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-            <Input
-              id="friend-email"
-              type="email"
-              required
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="friend@gmail.com"
-              className="rounded-xl"
-            />
-            <Button disabled={isBusy || !inviteEmail.trim() || !selectedGroupId} className="rounded-xl shrink-0">
-              <UserPlus className="h-4 w-4 mr-2" />
-              Send Invitation
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {(localError || error) && (
-        <p role="alert" className="text-sm text-destructive p-3 rounded-xl bg-destructive/10 border border-destructive/20">
-          {localError || error?.message}
-        </p>
-      )}
+      {/* Status Alerts */}
       {message && (
         <p
           role="status"
-          className="text-sm text-emerald-600 dark:text-emerald-400 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2"
+          className="text-sm text-emerald-600 dark:text-emerald-400 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2"
         >
-          <CheckCircle2 className="h-4 w-4" />
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
           {message}
         </p>
       )}
 
-      {/* Invitations Section */}
-      <section className="space-y-3" aria-label="Group invitations">
-        <h2 className="text-lg font-bold">Invitations ({invitations.length})</h2>
-        {invitations.length === 0 && (
-          <p className="text-sm text-muted-foreground">No pending invitations.</p>
-        )}
-        {invitations.map((inv) => {
-          const isIncoming = inv.invitedEmail.toLowerCase() === ownEmail;
-          return (
-            <div
-              key={inv.id}
-              className="rounded-2xl border bg-card p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs"
-            >
-              <div className="min-w-0">
-                <p className="font-semibold break-all text-sm">{inv.groupName}</p>
-                <p className="text-xs text-muted-foreground">
-                  {isIncoming
-                    ? `Invited by ${inv.inviterName} (${inv.role})`
-                    : `Sent to ${inv.invitedEmail}`}
-                </p>
-                <p className="text-[11px] mt-1 text-muted-foreground flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Status: {inv.status}
-                </p>
-              </div>
-
-              <div className="flex gap-2">
-                {isIncoming && inv.status === 'pending' ? (
-                  <>
-                    <Button
-                      size="sm"
-                      disabled={isBusy}
-                      onClick={() =>
-                        void run(
-                          () => respond({ id: inv.id, accept: true, token: inv.token }),
-                          'Invitation accepted! You have joined the group.'
-                        )
-                      }
-                    >
-                      Accept
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isBusy}
-                      onClick={() =>
-                        void run(() => respond({ id: inv.id, accept: false }), 'Invitation declined.')
-                      }
-                    >
-                      Decline
-                    </Button>
-                  </>
-                ) : (
-                  !isIncoming &&
-                  inv.status === 'pending' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isBusy}
-                      onClick={() => void run(() => cancelRequest(inv.id), 'Invitation cancelled.')}
-                    >
-                      Cancel
-                    </Button>
-                  )
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      {/* Friends & Shared Balances List */}
+      {/* Friends Search & List */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="text-xl font-black tracking-tight text-foreground">
-            Friends &amp; Balances ({friendsList.length})
-          </h2>
-          {friendsList.length > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[240px] max-w-sm">
+            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               aria-label="Search friends"
-              placeholder="Search by name or email..."
+              placeholder="Search friends by name or email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="rounded-xl max-w-xs"
+              className="rounded-xl pl-9"
             />
-          )}
+          </div>
+          <span className="text-xs font-semibold text-muted-foreground">
+            {friendSummaries.length} {friendSummaries.length === 1 ? 'friend' : 'friends'}
+          </span>
         </div>
 
-        {friendsList.length === 0 ? (
+        {friendSummaries.length === 0 ? (
           <EmptyState
             icon={<Users className="h-6 w-6" />}
-            title="No friends or group members yet"
-            description="When you create groups and invite friends, they will appear here with dynamic shared balances."
+            title="No friends added yet"
+            description="Add friends by email to track direct one-to-one expenses and settlements without creating groups."
+            action={
+              <Button
+                onClick={() => {
+                  setAddFriendError(null);
+                  setFriendEmailInput('');
+                  setIsAddFriendModalOpen(true);
+                }}
+                className="rounded-xl font-bold bg-[#0055FF] text-white"
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add your first friend
+              </Button>
+            }
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {friendsList
+            {friendSummaries
               .filter(
                 (f) =>
                   f.name.toLowerCase().includes(search.toLowerCase()) ||
-                  f.email.toLowerCase().includes(search.toLowerCase())
+                  (f.email || '').toLowerCase().includes(search.toLowerCase())
               )
               .map((friend) => {
-                const isUserDebtor = friend.netBalance < 0;
-                const isSettled = friend.netBalance === 0;
-                const absAmount = Math.abs(friend.netBalance);
-                const formattedAmount = formatMoney(absAmount, friend.currency);
+                const formattedAmount = formatMoney(friend.amountMinor, curr);
 
                 return (
                   <div
@@ -883,7 +721,7 @@ export function FriendsPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <Avatar size="default" className="h-11 w-11 text-xs font-bold shrink-0">
+                        <Avatar className="h-11 w-11 text-xs font-bold shrink-0">
                           {friend.avatarUrl && <AvatarImage src={friend.avatarUrl} alt={friend.name} />}
                           <AvatarFallback className="bg-primary/10 text-primary uppercase">
                             {friend.name.slice(0, 2)}
@@ -902,20 +740,20 @@ export function FriendsPage() {
                     </div>
 
                     <div className="pt-2 border-t border-border/40 flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground font-medium">Balance</span>
+                      <span className="text-xs text-muted-foreground font-medium">Direct Balance</span>
                       <span
                         className={cn(
                           'text-xs font-bold',
-                          isSettled && 'text-emerald-600 dark:text-emerald-400',
-                          !isSettled && isUserDebtor && 'text-rose-600 dark:text-rose-400',
-                          !isSettled && !isUserDebtor && 'text-emerald-600 dark:text-emerald-400'
+                          friend.isSettled && 'text-emerald-600 dark:text-emerald-400',
+                          !friend.isSettled && friend.isUserDebtor && 'text-rose-600 dark:text-rose-400',
+                          !friend.isSettled && friend.isFriendDebtor && 'text-emerald-600 dark:text-emerald-400'
                         )}
                       >
-                        {isSettled
-                          ? 'All settled up'
-                          : isUserDebtor
+                        {friend.isSettled
+                          ? 'Settled up'
+                          : friend.isUserDebtor
                           ? `You owe ${formattedAmount}`
-                          : `Owes you ${formattedAmount}`}
+                          : `${friend.name} owes you ${formattedAmount}`}
                       </span>
                     </div>
                   </div>
@@ -924,6 +762,130 @@ export function FriendsPage() {
           </div>
         )}
       </section>
+
+      {/* Secondary Section: Group Invitations */}
+      {invitations.length > 0 && (
+        <section className="space-y-3 pt-6 border-t border-border/60" aria-label="Group invitations">
+          <h2 className="text-base font-bold text-foreground">Pending Group Invitations ({invitations.length})</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {invitations.map((inv) => {
+              const isIncoming = inv.invitedEmail.toLowerCase() === ownEmail;
+              return (
+                <div
+                  key={inv.id}
+                  className="rounded-2xl border bg-card p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">{inv.groupName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isIncoming ? `Invited by ${inv.inviterName}` : `Sent to ${inv.invitedEmail}`}
+                    </p>
+                  </div>
+
+                  {isIncoming && inv.status === 'pending' && (
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="xs"
+                        disabled={isBusy}
+                        onClick={() => void respond({ id: inv.id, accept: true, token: inv.token })}
+                        className="rounded-lg font-bold"
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={isBusy}
+                        onClick={() => void respond({ id: inv.id, accept: false })}
+                        className="rounded-lg"
+                      >
+                        Decline
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Add Friend Modal Dialog */}
+      {isAddFriendModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in-50">
+          <div className="bg-card border border-border rounded-3xl max-w-md w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b pb-3 border-border/60">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                  <UserPlus className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-foreground">Add a Friend</h3>
+                  <p className="text-xs text-muted-foreground">Connect directly with another Tabby user</p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsAddFriendModalOpen(false)}
+                className="rounded-full h-8 w-8 p-0"
+              >
+                &times;
+              </Button>
+            </div>
+
+            {addFriendError && (
+              <div className="p-3.5 rounded-2xl bg-destructive/10 text-destructive text-xs border border-destructive/20 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{addFriendError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddFriendSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="friend-email" className="text-xs font-semibold">
+                  Friend&apos;s Tabby Email Address
+                </Label>
+                <div className="relative">
+                  <Mail className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="friend-email"
+                    type="email"
+                    placeholder="alex@gmail.com"
+                    value={friendEmailInput}
+                    onChange={(e) => setFriendEmailInput(e.target.value)}
+                    required
+                    className="rounded-xl pl-9"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Adding a friend connects you directly. You can split bills 1-to-1 without creating a group.
+                </p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-border/60">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAddFriendModalOpen(false)}
+                  className="rounded-xl"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isAdding || !friendEmailInput.trim()}
+                  className="rounded-xl font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90 gap-1.5"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>{isAdding ? 'Adding friend...' : 'Add friend'}</span>
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

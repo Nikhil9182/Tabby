@@ -82,10 +82,13 @@ export function SettlementNewPage() {
     const amountMinor = Math.round(amountFloat * 100);
 
     try {
-      const ledgerId = groupId || groups[0]?.id;
-      if (!ledgerId) throw new Error("Select or create an active group to settle up.");
+      const isDirect = !groupId;
+      const otherUserId = payerId === currentId ? toUser.trim() : payerId;
+
       await recordSettlement({
-        groupId: ledgerId,
+        groupId: isDirect ? undefined : groupId,
+        friendId: isDirect ? otherUserId : undefined,
+        contextType: isDirect ? 'direct' : 'group',
         fromUserId: payerId,
         toUserId: toUser.trim(),
         amountMinor,

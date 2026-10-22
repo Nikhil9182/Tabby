@@ -8,3 +8,4 @@ export * from './use-users';
 export * from './use-categories';
 export * from './use-theme';
 export * from './use-media-query';
+export * from './use-friends';

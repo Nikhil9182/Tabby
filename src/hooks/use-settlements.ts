@@ -5,6 +5,8 @@ import { settlementService } from '@/services/supabase/settlement-service';
 
 export interface RecordSettlementInput {
   groupId?: string;
+  friendId?: string;
+  contextType?: 'direct' | 'group';
   sourceId?: string;
   fromUserId: string;
   toUserId: string;
@@ -19,6 +21,8 @@ export interface RecordSettlementInput {
 export const recordSettlementSchema = z
   .object({
     groupId: z.string().optional(),
+    friendId: z.string().optional(),
+    contextType: z.enum(['direct', 'group']).optional(),
     sourceId: z.string().optional(),
     fromUserId: z.string().min(1, 'Payer (fromUserId) is required'),
     toUserId: z.string().min(1, 'Recipient (toUserId) is required'),
@@ -33,6 +37,11 @@ export const recordSettlementSchema = z
     path: ['toUserId'],
   });
 
+export interface SettlementFilters {
+  groupId?: string;
+  contextType?: 'direct' | 'group';
+}
+
 export interface UseSettlementsResult {
   settlements: Settlement[];
   isLoading: boolean;
@@ -44,9 +53,11 @@ export interface UseSettlementsResult {
   isDeleting: boolean;
 }
 
-export function useSettlements(groupId?: string): UseSettlementsResult {
+export function useSettlements(filter?: string | SettlementFilters): UseSettlementsResult {
   const queryClient = useQueryClient();
-  const queryKey = groupId ? ['settlements', { groupId }] : ['settlements'];
+  const groupId = typeof filter === 'string' ? filter : filter?.groupId;
+  const contextType = typeof filter === 'object' ? filter?.contextType : undefined;
+  const queryKey = ['settlements', { groupId, contextType }];
 
   const {
     data: settlements = [],
@@ -55,12 +66,14 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
     refetch,
   } = useQuery<Settlement[], Error>({
     queryKey,
-    queryFn: async () => {
-      const raw = await settlementService.getSettlements(groupId);
+    queryFn: async (): Promise<Settlement[]> => {
+      const raw = await settlementService.getSettlements(groupId, contextType);
       return raw.map((s) => ({
         id: s.id,
-        sourceId: s.group_id,
-        groupId: s.group_id,
+        contextType: (s.context_type as any) || (s.group_id ? 'group' : 'direct'),
+        friendshipId: s.friendship_id || undefined,
+        sourceId: s.group_id || s.friendship_id || 'direct',
+        groupId: s.group_id || undefined,
         fromUserId: s.from_user_id,
         toUserId: s.to_user_id,
         amountMinor: s.amount_minor,
@@ -81,15 +94,15 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
     mutationFn: async (input: RecordSettlementInput): Promise<Settlement> => {
       const normalizedCurrency = (input.currency || 'USD').trim().toUpperCase();
       const normalizedDate = input.settlementDate || new Date().toISOString();
-      const targetGroupId = input.groupId || input.sourceId;
-
-      if (!targetGroupId) {
-        throw new Error('Settlements must belong to a group.');
-      }
+      const isDirect = input.contextType === 'direct' || (!input.groupId && !!input.friendId) || !input.groupId;
+      const normalizedContextType: 'direct' | 'group' = isDirect ? 'direct' : 'group';
+      const targetGroupId = isDirect ? undefined : (input.groupId || input.sourceId);
 
       recordSettlementSchema.parse({
         groupId: targetGroupId,
-        sourceId: targetGroupId,
+        friendId: input.friendId,
+        contextType: normalizedContextType,
+        sourceId: input.sourceId,
         fromUserId: input.fromUserId,
         toUserId: input.toUserId,
         amountMinor: input.amountMinor,
@@ -101,6 +114,8 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
 
       const dbSettlement = await settlementService.createSettlement({
         groupId: targetGroupId,
+        friendId: input.friendId,
+        contextType: normalizedContextType,
         fromUserId: input.fromUserId,
         toUserId: input.toUserId,
         amountMinor: input.amountMinor,
@@ -112,8 +127,10 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
 
       return {
         id: dbSettlement.id,
-        sourceId: dbSettlement.group_id,
-        groupId: dbSettlement.group_id,
+        contextType: (dbSettlement.context_type as any) || normalizedContextType,
+        friendshipId: dbSettlement.friendship_id || undefined,
+        sourceId: dbSettlement.group_id || dbSettlement.friendship_id || 'direct',
+        groupId: dbSettlement.group_id || undefined,
         fromUserId: dbSettlement.from_user_id,
         toUserId: dbSettlement.to_user_id,
         amountMinor: dbSettlement.amount_minor,
@@ -128,9 +145,13 @@ export function useSettlements(groupId?: string): UseSettlementsResult {
     },
     onSuccess: (_data, input) => {
       void queryClient.invalidateQueries({ queryKey: ['settlements'] });
+      void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       if (input.groupId) {
         void queryClient.invalidateQueries({ queryKey: ['group', input.groupId] });
         void queryClient.invalidateQueries({ queryKey: ['group-balances', input.groupId] });
+      }
+      if (input.friendId) {
+        void queryClient.invalidateQueries({ queryKey: ['friends'] });
       }
     },
   });

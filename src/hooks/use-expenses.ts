@@ -10,7 +10,9 @@ import { expenseService, type UnifiedExpense } from '@/services/supabase/expense
 
 export interface ExpenseFilters {
   sourceType?: SourceType;
+  contextType?: 'personal' | 'group' | 'direct';
   groupId?: string;
+  friendId?: string;
   categoryId?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -40,8 +42,10 @@ export interface CreateExpenseInput {
   reportingAmountMinor?: number;
   paidBy: string;
   sourceType?: SourceType;
+  contextType?: 'personal' | 'group' | 'direct';
   sourceId?: string;
   groupId?: string;
+  friendId?: string;
   categoryId?: string;
   notes?: string;
   expenseDate?: string;
@@ -80,9 +84,11 @@ export const createExpenseInputSchema = z.object({
   amountMinor: z.number().int().positive('Amount must be positive integer minor units'),
   currency: z.string().trim().length(3).toUpperCase().default('USD'),
   paidBy: z.string().min(1, 'Payer user ID is required'),
-  sourceType: z.enum(['personal', 'group']).default('personal'),
+  sourceType: z.enum(['personal', 'group', 'direct']).default('personal'),
+  contextType: z.enum(['personal', 'group', 'direct']).optional(),
   sourceId: z.string().optional(),
   groupId: z.string().optional(),
+  friendId: z.string().optional(),
   categoryId: z.string().optional(),
   notes: z.string().optional(),
   expenseDate: z.string().min(1, 'Expense date is required'),
@@ -121,7 +127,9 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
     queryFn: async () => {
       return await expenseService.getExpenses({
         groupId: filters?.groupId,
+        friendId: filters?.friendId,
         sourceType: filters?.sourceType,
+        contextType: filters?.contextType,
         categoryId: filters?.categoryId,
         paidBy: filters?.paidBy,
         startDate: filters?.dateFrom,
@@ -134,8 +142,11 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
   const expenses: Expense[] = expensesData.map((e) => ({
     id: e.id,
     sourceType: e.sourceType,
+    contextType: e.contextType,
     sourceId: e.sourceId,
     groupId: e.groupId,
+    friendshipId: e.friendshipId,
+    friendId: e.friendId,
     description: e.description,
     notes: e.notes,
     categoryId: e.categoryId,
@@ -191,8 +202,11 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
       const normalizedDescription = (input.description || input.title || '').trim();
       const normalizedAmount = input.amountMinor ?? input.originalAmountMinor ?? 0;
       const normalizedCurrency = (input.currency || input.originalCurrency || 'USD').trim().toUpperCase();
-      const normalizedSourceType = input.sourceType ?? (input.groupId ? 'group' : 'personal');
-      const normalizedSourceId = input.sourceId ?? (input.groupId ? input.groupId : input.paidBy);
+      const isDirect = input.contextType === 'direct' || input.sourceType === 'direct' || (!input.groupId && !!input.friendId);
+      const isGroup = (input.contextType === 'group' || input.sourceType === 'group' || !!input.groupId) && !isDirect;
+      const normalizedContextType: 'personal' | 'group' | 'direct' = isDirect ? 'direct' : isGroup ? 'group' : 'personal';
+      const normalizedSourceType = isDirect ? 'direct' : isGroup ? 'group' : 'personal';
+      const normalizedSourceId = input.sourceId ?? (isGroup ? input.groupId! : isDirect ? (input.friendId || input.paidBy) : input.paidBy);
       const participantIds =
         input.participants && input.participants.length > 0
           ? input.participants
@@ -205,8 +219,10 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         currency: normalizedCurrency,
         paidBy: input.paidBy,
         sourceType: normalizedSourceType,
+        contextType: normalizedContextType,
         sourceId: normalizedSourceId,
         groupId: input.groupId,
+        friendId: input.friendId,
         categoryId: input.categoryId,
         notes: input.notes,
         expenseDate: input.expenseDate || new Date().toISOString(),
@@ -227,7 +243,9 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
         reportingAmountMinor: input.reportingAmountMinor ?? normalizedAmount,
         paidBy: input.paidBy,
         sourceType: normalizedSourceType,
+        contextType: normalizedContextType,
         groupId: input.groupId,
+        friendId: input.friendId,
         categoryId: input.categoryId,
         notes: input.notes,
         expenseDate: input.expenseDate,
@@ -239,8 +257,10 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
       const createdExpense: Expense = {
         id: result.id,
         sourceType: normalizedSourceType,
+        contextType: normalizedContextType,
         sourceId: normalizedSourceId,
         groupId: input.groupId,
+        friendId: input.friendId,
         description: normalizedDescription,
         notes: input.notes,
         categoryId: input.categoryId,
@@ -266,6 +286,9 @@ export function useExpenses(filters?: ExpenseFilters): UseExpensesResult {
       if (input.groupId) {
         void queryClient.invalidateQueries({ queryKey: ['group', input.groupId] });
         void queryClient.invalidateQueries({ queryKey: ['group-balances', input.groupId] });
+      }
+      if (input.friendId) {
+        void queryClient.invalidateQueries({ queryKey: ['friends'] });
       }
     },
   });

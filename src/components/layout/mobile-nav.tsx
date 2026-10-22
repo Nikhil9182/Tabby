@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Receipt,
   Users,
+  UserCheck,
   BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,9 +16,9 @@ interface MobileTabItem {
 
 const mainTabs: MobileTabItem[] = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { to: "/expenses", label: "Expenses", icon: Receipt },
-  { to: "/friends", label: "Friends", icon: Users },
+  { to: "/friends", label: "Friends", icon: UserCheck },
   { to: "/groups", label: "Groups", icon: Users },
+  { to: "/expenses", label: "Expenses", icon: Receipt },
   { to: "/reports", label: "Reports", icon: BarChart3 },
 ];
 

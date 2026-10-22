@@ -56,13 +56,39 @@ export interface GroupBalances {
  * @returns GroupBalances object containing individual balances and simplified debts.
  */
 export function calculateGroupBalances(
-  expenses: Expense[],
-  splits: ExpenseSplit[],
-  settlements: Settlement[],
-  groupCurrency: string
+  expensesOrGroupId: Expense[] | string,
+  splitsOrExpenses: ExpenseSplit[] | Expense[],
+  settlementsOrSplits: Settlement[] | ExpenseSplit[],
+  currencyOrSettlements: string | Settlement[],
+  maybeCurrency?: string
 ): GroupBalances {
-  const activeExpenses = expenses.filter((e) => !e.deletedAt);
-  const activeSettlements = settlements.filter((s) => !s.deletedAt);
+  let targetGroupId: string | undefined;
+  let expenses: Expense[];
+  let splits: ExpenseSplit[];
+  let settlements: Settlement[];
+  let groupCurrency: string;
+
+  if (typeof expensesOrGroupId === 'string') {
+    targetGroupId = expensesOrGroupId;
+    expenses = (splitsOrExpenses as Expense[]) || [];
+    splits = (settlementsOrSplits as ExpenseSplit[]) || [];
+    settlements = (currencyOrSettlements as Settlement[]) || [];
+    groupCurrency = maybeCurrency || 'USD';
+  } else {
+    expenses = expensesOrGroupId || [];
+    splits = (splitsOrExpenses as ExpenseSplit[]) || [];
+    settlements = (settlementsOrSplits as Settlement[]) || [];
+    groupCurrency = (currencyOrSettlements as string) || 'USD';
+    targetGroupId = expenses.find((e) => e.groupId)?.groupId;
+  }
+
+  // Strictly filter to the target group if specified, excluding any direct expenses
+  const activeExpenses = expenses.filter(
+    (e) => !e.deletedAt && (!targetGroupId || e.groupId === targetGroupId) && (e.contextType !== 'direct')
+  );
+  const activeSettlements = settlements.filter(
+    (s) => !s.deletedAt && (!targetGroupId || s.groupId === targetGroupId) && (s.contextType !== 'direct')
+  );
 
   // Index splits by expenseId
   const splitsByExpenseId = new Map<string, ExpenseSplit[]>();
@@ -473,3 +499,168 @@ export function simplifyDebts(
 export function getSuggestedSettlements(groupBalances: GroupBalances): PairwiseBalance[] {
   return groupBalances.simplifiedDebts;
 }
+
+/**
+ * Calculates the net direct balance strictly between two friends.
+ * Group expenses and group settlements are explicitly excluded.
+ */
+export function calculateDirectFriendBalance(
+  userAId: string,
+  userBId: string,
+  expenses: Expense[],
+  splits: ExpenseSplit[],
+  settlements: Settlement[],
+  currency = 'USD'
+): PairwiseBalance {
+  // Only include active DIRECT expenses between userA and userB
+  const directExpenses = expenses.filter(
+    (e) =>
+      !e.deletedAt &&
+      (e.contextType === 'direct' || (!e.groupId && e.sourceType !== 'group')) &&
+      ((e.paidBy === userAId && e.participants.includes(userBId)) ||
+        (e.paidBy === userBId && e.participants.includes(userAId)) ||
+        (e.participants.includes(userAId) && e.participants.includes(userBId)))
+  );
+
+  // Only include active DIRECT settlements between userA and userB
+  const directSettlements = settlements.filter(
+    (s) =>
+      !s.deletedAt &&
+      (s.contextType === 'direct' || !s.groupId) &&
+      ((s.fromUserId === userAId && s.toUserId === userBId) ||
+        (s.fromUserId === userBId && s.toUserId === userAId))
+  );
+
+  return calculatePairwiseBalance(
+    userAId,
+    userBId,
+    directExpenses,
+    splits,
+    directSettlements,
+    currency
+  );
+}
+
+export interface DashboardBalances {
+  direct: {
+    totalOwed: number;
+    totalOwedToYou: number;
+    netBalance: number;
+    pairwise: PairwiseBalance[];
+  };
+  groups: {
+    totalOwed: number;
+    totalOwedToYou: number;
+    netBalance: number;
+    byGroup: Array<{
+      groupId: string;
+      groupName: string;
+      netBalance: number;
+      totalOwed: number;
+      totalOwedToYou: number;
+      currency: string;
+    }>;
+  };
+  overall: {
+    totalOwed: number;
+    totalOwedToYou: number;
+    netBalance: number;
+    currency: string;
+  };
+}
+
+/**
+ * Aggregates user balances across independent direct friend tracking and group tracking.
+ * Guarantees zero double-counting because direct and group contexts are disjoint.
+ */
+export function calculateDashboardBalances(
+  currentUserId: string,
+  expenses: Expense[],
+  splits: ExpenseSplit[],
+  settlements: Settlement[],
+  friendIds: string[],
+  groups: Array<{ id: string; name: string; currency?: string }>,
+  defaultCurrency = 'USD'
+): DashboardBalances {
+  // 1. Direct Balances with Friends
+  const directPairwise: PairwiseBalance[] = [];
+  let directOwed = 0;
+  let directOwedToYou = 0;
+
+  for (const friendId of friendIds) {
+    if (friendId === currentUserId) continue;
+    const pb = calculateDirectFriendBalance(
+      currentUserId,
+      friendId,
+      expenses,
+      splits,
+      settlements,
+      defaultCurrency
+    );
+    if (pb.amountMinor > 0) {
+      directPairwise.push(pb);
+      if (pb.fromUserId === currentUserId) {
+        directOwed += pb.amountMinor;
+      } else {
+        directOwedToYou += pb.amountMinor;
+      }
+    }
+  }
+
+  // 2. Group Balances
+  let groupsOwed = 0;
+  let groupsOwedToYou = 0;
+  const byGroup: DashboardBalances['groups']['byGroup'] = [];
+
+  for (const group of groups) {
+    const groupCurr = group.currency || defaultCurrency;
+    const groupExpenses = expenses.filter((e) => !e.deletedAt && e.groupId === group.id && e.contextType !== 'direct');
+    const groupSettlements = settlements.filter((s) => !s.deletedAt && s.groupId === group.id && s.contextType !== 'direct');
+
+    const gb = calculateGroupBalances(
+      group.id,
+      groupExpenses,
+      splits,
+      groupSettlements,
+      groupCurr
+    );
+    const userBal = gb.balances.get(currentUserId);
+    const net = userBal?.netBalance ?? 0;
+    const owed = userBal?.totalOwed ?? 0;
+    const owedToYou = userBal?.totalOwedToYou ?? 0;
+
+    groupsOwed += owed;
+    groupsOwedToYou += owedToYou;
+
+    byGroup.push({
+      groupId: group.id,
+      groupName: group.name,
+      netBalance: net,
+      totalOwed: owed,
+      totalOwedToYou: owedToYou,
+      currency: groupCurr,
+    });
+  }
+
+  return {
+    direct: {
+      totalOwed: directOwed,
+      totalOwedToYou: directOwedToYou,
+      netBalance: directOwedToYou - directOwed,
+      pairwise: directPairwise,
+    },
+    groups: {
+      totalOwed: groupsOwed,
+      totalOwedToYou: groupsOwedToYou,
+      netBalance: groupsOwedToYou - groupsOwed,
+      byGroup,
+    },
+    overall: {
+      totalOwed: directOwed + groupsOwed,
+      totalOwedToYou: directOwedToYou + groupsOwedToYou,
+      netBalance: (directOwedToYou + groupsOwedToYou) - (directOwed + groupsOwed),
+      currency: defaultCurrency,
+    },
+  };
+}
+

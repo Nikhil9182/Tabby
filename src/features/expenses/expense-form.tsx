@@ -7,6 +7,7 @@ import { z } from 'zod';
 import {
   Calendar as CalendarIcon,
   Users,
+  UserCheck,
   Tag,
   FileText,
   DollarSign,
@@ -44,6 +45,7 @@ import {
   useUsers,
   useCategories,
   useCurrency,
+  useFriends,
 } from '@/hooks';
 import {
   toMajorUnits,
@@ -83,7 +85,6 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const routeParams = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const queryGroupId = searchParams.get('groupId');
-  const queryFriendId = searchParams.get('friendId');
   const expenseId = propExpenseId || routeParams.id;
   const isEditing = Boolean(expenseId);
 
@@ -95,9 +96,18 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   const { expense: existingExpense, splits: existingSplits, isLoading: isLoadingExisting } =
     useExpense(expenseId || '');
   const { allGroups: groups } = useGroups();
-  const { friends } = useCollaboration();
+  const { friends: supabaseFriends } = useFriends();
   const { categories } = useCategories();
   const { users } = useUsers();
+
+  const queryFriendId = searchParams.get('friendId') || searchParams.get('queryFriendId');
+  const [trackingMode, setTrackingMode] = useState<'direct' | 'group'>(() => {
+    if (queryFriendId) return 'direct';
+    if (queryGroupId) return 'group';
+    return 'direct';
+  });
+  const [selectedFriendId, setSelectedFriendId] = useState<string>(queryFriendId || '');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(queryGroupId || '');
 
   // Split state
   const [splitType, setSplitType] = useState<SplitType>('equal');
@@ -134,16 +144,27 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     },
   });
 
-  const watchedGroupId = watch('groupId');
   const watchedCurrency = watch('currency') || defaultCurrency;
   const watchedAmountStr = watch('amount');
 
   // Load group members if a group is selected
   const { members: groupMemberships } = useGroup(
-    watchedGroupId !== 'personal' ? watchedGroupId : ''
+    trackingMode === 'group' && selectedGroupId ? selectedGroupId : ''
   );
 
-  // Determine eligible participants based on group and existing data
+  // Auto-select first friend or first group if none selected
+  useEffect(() => {
+    if (!isEditing) {
+      if (trackingMode === 'direct' && !selectedFriendId && supabaseFriends.length > 0) {
+        setSelectedFriendId(supabaseFriends[0].id);
+      } else if (trackingMode === 'group' && !selectedGroupId && groups.length > 0) {
+        setSelectedGroupId(groups[0].id);
+        setValue('groupId', groups[0].id);
+      }
+    }
+  }, [trackingMode, supabaseFriends, groups, selectedFriendId, selectedGroupId, isEditing, setValue]);
+
+  // Determine eligible participants based on trackingMode and existing data
   const availableMembers = useMemo(() => {
     const list: Array<{ id: string; name: string }> = [];
 
@@ -169,7 +190,16 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     });
 
     // 2. Add other participants
-    if (watchedGroupId !== 'personal') {
+    if (trackingMode === 'direct') {
+      if (selectedFriendId && selectedFriendId !== currentUserId) {
+        const friend = supabaseFriends.find((f) => f.id === selectedFriendId) || users.find((u) => u.id === selectedFriendId);
+        list.push({
+          id: selectedFriendId,
+          name: resolveMemberName(selectedFriendId, friend),
+        });
+      }
+    } else {
+      // Group mode
       groupMemberships.forEach((gm) => {
         if (gm.status && gm.status !== 'active') return;
         if (isCurrentEntity(gm.userId)) return;
@@ -178,19 +208,6 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           list.push({
             id: gm.userId,
             name: resolveMemberName(gm.userId, u),
-          });
-        }
-      });
-    } else {
-      // Personal contacts / users (excluding current user and any placeholder aliases)
-      users.forEach((u) => {
-        if (isCurrentEntity(u.id) || (u.googleSub && isCurrentEntity(u.googleSub))) {
-          return;
-        }
-        if (!list.some((m) => m.id === u.id)) {
-          list.push({
-            id: u.id,
-            name: resolveMemberName(u.id, u),
           });
         }
       });
@@ -233,27 +250,13 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     }
 
     return deduplicated;
-  }, [watchedGroupId, groupMemberships, users, friends, currentUserId, currentUser, existingExpense]);
+  }, [trackingMode, selectedFriendId, supabaseFriends, groupMemberships, users, currentUserId, currentUser, existingExpense]);
 
-  // When group changes, update participants list if not editing
+  // When available members change, update participants list if not editing
   useEffect(() => {
     if (!isEditing && availableMembers.length > 0) {
-      // If a specific friend was selected via query param, select user and that friend
-      if (queryFriendId && availableMembers.some((m) => m.id === queryFriendId)) {
-        const friendIds = [currentUserId, queryFriendId];
-        setSelectedParticipants(friendIds);
-        setPercentages({ [currentUserId]: 50, [queryFriendId]: 50 });
-        setShares({ [currentUserId]: 1, [queryFriendId]: 1 });
-        return;
-      }
-
-      const allIds = watchedGroupId === 'personal' ? [currentUserId] : availableMembers.map((m) => m.id);
-      setSelectedParticipants((prev) => {
-        if (prev.length === allIds.length && prev.every((id) => allIds.includes(id))) {
-          return prev;
-        }
-        return allIds;
-      });
+      const allIds = availableMembers.map((m) => m.id);
+      setSelectedParticipants(allIds);
 
       const equalPct = Math.floor(100 / allIds.length);
       const newPct: Record<string, number> = {};
@@ -265,7 +268,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       setPercentages(newPct);
       setShares(newShares);
     }
-  }, [watchedGroupId, isEditing, availableMembers.length, queryFriendId, currentUserId]);
+  }, [availableMembers, isEditing]);
 
   // Prepopulate if editing (once when expense is loaded)
   const hasPopulatedRef = React.useRef(false);
@@ -273,6 +276,25 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   useEffect(() => {
     if (isEditing && existingExpense && !hasPopulatedRef.current) {
       hasPopulatedRef.current = true;
+      const isDirectExp =
+        existingExpense.contextType === 'direct' ||
+        existingExpense.sourceType === 'direct' ||
+        (!existingExpense.groupId && !!existingExpense.friendId);
+
+      if (isDirectExp) {
+        setTrackingMode('direct');
+        const otherParticipant =
+          existingExpense.friendId ||
+          existingExpense.participants?.find((p) => p !== currentUserId) ||
+          '';
+        setSelectedFriendId(otherParticipant);
+      } else {
+        setTrackingMode('group');
+        if (existingExpense.groupId) {
+          setSelectedGroupId(existingExpense.groupId);
+        }
+      }
+
       const curr = existingExpense.originalCurrency || defaultCurrency;
       reset({
         description: existingExpense.description,
@@ -490,47 +512,101 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     }));
 
     try {
-      const isGroup = data.groupId !== 'personal';
-      const targetId = isGroup ? data.groupId : undefined;
       const expenseDateISO = new Date(data.expenseDate).toISOString();
 
-      if (isEditing && expenseId) {
-        await updateExpense({
-          id: expenseId,
-          description: data.description,
-          notes: data.notes,
-          categoryId: data.categoryId,
-          paidBy: data.paidBy,
-          groupId: isGroup ? targetId : undefined,
-          sourceType: isGroup ? 'group' : 'personal',
-          sourceId: isGroup ? targetId : currentUserId,
-          originalAmountMinor: totalAmountMinor,
-          originalCurrency: data.currency,
-          splitType,
-          participants: selectedParticipants,
-          expenseDate: expenseDateISO,
-          splits: finalSplits,
-        });
-        navigate(`/expenses/${expenseId}`);
+      if (trackingMode === 'direct') {
+        if (!selectedFriendId) {
+          setSubmitError('Please select a friend for this direct expense.');
+          return;
+        }
+
+        const directParticipants = [currentUserId, selectedFriendId];
+
+        if (isEditing && expenseId) {
+          await updateExpense({
+            id: expenseId,
+            description: data.description,
+            notes: data.notes,
+            categoryId: data.categoryId,
+            paidBy: data.paidBy,
+            groupId: undefined,
+            sourceType: 'direct',
+            sourceId: selectedFriendId,
+            originalAmountMinor: totalAmountMinor,
+            originalCurrency: data.currency,
+            splitType,
+            participants: directParticipants,
+            expenseDate: expenseDateISO,
+            splits: finalSplits,
+          });
+          navigate(`/friends?friendId=${selectedFriendId}`);
+        } else {
+          await createExpense({
+            description: data.description,
+            amountMinor: totalAmountMinor,
+            originalAmountMinor: totalAmountMinor,
+            currency: data.currency,
+            originalCurrency: data.currency,
+            paidBy: data.paidBy,
+            sourceType: 'direct',
+            contextType: 'direct',
+            friendId: selectedFriendId,
+            categoryId: data.categoryId,
+            notes: data.notes,
+            expenseDate: expenseDateISO,
+            splitType,
+            participants: directParticipants,
+            splits: finalSplits,
+            createdBy: currentUserId,
+          });
+          navigate(`/friends?friendId=${selectedFriendId}`);
+        }
       } else {
-        const created = await createExpense({
-          description: data.description,
-          amountMinor: totalAmountMinor,
-          originalAmountMinor: totalAmountMinor,
-          currency: data.currency,
-          originalCurrency: data.currency,
-          paidBy: data.paidBy,
-          sourceType: isGroup ? 'group' : 'personal',
-          groupId: isGroup ? targetId : undefined,
-          categoryId: data.categoryId,
-          notes: data.notes,
-          expenseDate: expenseDateISO,
-          splitType,
-          participants: selectedParticipants,
-          splits: finalSplits,
-          createdBy: currentUserId,
-        });
-        navigate(`/expenses/${created.id}`);
+        // Group mode
+        if (!selectedGroupId || selectedGroupId === 'personal') {
+          setSubmitError('Please select a group for this group expense.');
+          return;
+        }
+
+        if (isEditing && expenseId) {
+          await updateExpense({
+            id: expenseId,
+            description: data.description,
+            notes: data.notes,
+            categoryId: data.categoryId,
+            paidBy: data.paidBy,
+            groupId: selectedGroupId,
+            sourceType: 'group',
+            sourceId: selectedGroupId,
+            originalAmountMinor: totalAmountMinor,
+            originalCurrency: data.currency,
+            splitType,
+            participants: selectedParticipants,
+            expenseDate: expenseDateISO,
+            splits: finalSplits,
+          });
+          navigate(`/groups/${selectedGroupId}`);
+        } else {
+          await createExpense({
+            description: data.description,
+            amountMinor: totalAmountMinor,
+            originalAmountMinor: totalAmountMinor,
+            currency: data.currency,
+            originalCurrency: data.currency,
+            paidBy: data.paidBy,
+            sourceType: 'group',
+            contextType: 'group',
+            groupId: selectedGroupId,
+            categoryId: data.categoryId,
+            notes: data.notes,
+            expenseDate: expenseDateISO,
+            splitType,
+            participants: selectedParticipants,
+            splits: finalSplits,
+            createdBy: currentUserId,
+          });
+          navigate(`/groups/${selectedGroupId}`);
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save expense';
@@ -591,6 +667,54 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           </CardHeader>
 
           <CardContent className="p-5 pt-2 space-y-4">
+            {/* Tracking Mode: Direct with Friend vs In a Group */}
+            {!isEditing && (
+              <div className="space-y-1.5 pb-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Split Context
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-muted/40 border border-border/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackingMode('direct');
+                      if (!selectedFriendId && supabaseFriends.length > 0) {
+                        setSelectedFriendId(supabaseFriends[0].id);
+                      }
+                    }}
+                    className={cn(
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all',
+                      trackingMode === 'direct'
+                        ? 'bg-card text-foreground shadow-xs border border-border/80'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <UserCheck className="h-4 w-4 text-emerald-500" />
+                    <span>With a Friend</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackingMode('group');
+                      if (!selectedGroupId && groups.length > 0) {
+                        setSelectedGroupId(groups[0].id);
+                        setValue('groupId', groups[0].id);
+                      }
+                    }}
+                    className={cn(
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all',
+                      trackingMode === 'group'
+                        ? 'bg-card text-foreground shadow-xs border border-border/80'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <Users className="h-4 w-4 text-primary" />
+                    <span>In a Group</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Description */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -681,31 +805,62 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
               </div>
             </div>
 
-            {/* Group & Paid By */}
+            {/* Context Participant/Group & Paid By */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Share with
+                  {trackingMode === 'direct' ? 'Split With Friend *' : 'Group *'}
                 </label>
-                <Controller
-                  control={control}
-                  name="groupId"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange} disabled={isEditing}>
-                      <SelectTrigger className="h-10 bg-background">
-                        <SelectValue placeholder="Personal, friend, or group" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="personal">Personal Expense</SelectItem>
-                        {groups.map((g) => (
+                {trackingMode === 'direct' ? (
+                  <Select
+                    value={selectedFriendId}
+                    onValueChange={(val) => setSelectedFriendId(val)}
+                    disabled={isEditing || Boolean(queryFriendId)}
+                  >
+                    <SelectTrigger className="h-10 bg-background">
+                      <SelectValue placeholder="Choose a friend" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {supabaseFriends.length === 0 ? (
+                        <div className="p-3 text-xs text-muted-foreground text-center">
+                          No friends added yet.
+                        </div>
+                      ) : (
+                        supabaseFriends.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.name || f.email}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Select
+                    value={selectedGroupId}
+                    onValueChange={(val) => {
+                      setSelectedGroupId(val);
+                      setValue('groupId', val);
+                    }}
+                    disabled={isEditing || Boolean(queryGroupId)}
+                  >
+                    <SelectTrigger className="h-10 bg-background">
+                      <SelectValue placeholder="Choose a group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {groups.length === 0 ? (
+                        <div className="p-3 text-xs text-muted-foreground text-center">
+                          No groups created yet.
+                        </div>
+                      ) : (
+                        groups.map((g) => (
                           <SelectItem key={g.id} value={g.id}>
                             {g.name}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
               <div className="space-y-1.5">

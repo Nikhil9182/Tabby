@@ -9,6 +9,36 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      friendships: {
+        Row: {
+          id: string;
+          user_id_1: string;
+          user_id_2: string;
+          status: 'pending' | 'accepted' | 'blocked';
+          action_user_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id_1: string;
+          user_id_2: string;
+          status?: 'pending' | 'accepted' | 'blocked';
+          action_user_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id_1?: string;
+          user_id_2?: string;
+          status?: 'pending' | 'accepted' | 'blocked';
+          action_user_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;
@@ -189,7 +219,9 @@ export interface Database {
       group_expenses: {
         Row: {
           id: string;
-          group_id: string;
+          context_type: 'direct' | 'group';
+          group_id: string | null;
+          friendship_id: string | null;
           description: string;
           notes: string | null;
           category_id: string | null;
@@ -210,7 +242,9 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          group_id: string;
+          context_type?: 'direct' | 'group';
+          group_id?: string | null;
+          friendship_id?: string | null;
           description: string;
           notes?: string | null;
           category_id?: string | null;
@@ -231,7 +265,9 @@ export interface Database {
         };
         Update: {
           id?: string;
-          group_id?: string;
+          context_type?: 'direct' | 'group';
+          group_id?: string | null;
+          friendship_id?: string | null;
           description?: string;
           notes?: string | null;
           category_id?: string | null;
@@ -288,7 +324,9 @@ export interface Database {
       settlements: {
         Row: {
           id: string;
-          group_id: string;
+          context_type: 'direct' | 'group';
+          group_id: string | null;
+          friendship_id: string | null;
           from_user_id: string;
           to_user_id: string;
           amount_minor: number;
@@ -304,7 +342,9 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          group_id: string;
+          context_type?: 'direct' | 'group';
+          group_id?: string | null;
+          friendship_id?: string | null;
           from_user_id: string;
           to_user_id: string;
           amount_minor: number;
@@ -320,7 +360,9 @@ export interface Database {
         };
         Update: {
           id?: string;
-          group_id?: string;
+          context_type?: 'direct' | 'group';
+          group_id?: string | null;
+          friendship_id?: string | null;
           from_user_id?: string;
           to_user_id?: string;
           amount_minor?: number;
@@ -434,6 +476,45 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      create_direct_expense_with_splits: {
+        Args: {
+          p_friend_id: string;
+          p_description: string;
+          p_notes: string | null;
+          p_category_id: string | null;
+          p_paid_by: string;
+          p_amount_minor: number;
+          p_currency: string;
+          p_reporting_currency: string;
+          p_exchange_rate: number | null;
+          p_exchange_rate_date: string | null;
+          p_exchange_rate_source: string | null;
+          p_reporting_amount_minor: number;
+          p_split_type: string;
+          p_expense_date: string;
+          p_splits: Json;
+        };
+        Returns: Json;
+      };
+      record_direct_settlement: {
+        Args: {
+          p_friend_id: string;
+          p_amount_minor: number;
+          p_currency: string;
+          p_settlement_date: string;
+          p_notes: string | null;
+          p_payer_id: string;
+          p_recipient_id: string;
+        };
+        Returns: Json;
+      };
+      get_or_create_friendship: {
+        Args: {
+          p_user_a: string;
+          p_user_b: string;
+        };
+        Returns: string;
+      };
       create_group_with_owner: {
         Args: {
           p_name: string;
