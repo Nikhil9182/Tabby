@@ -11,6 +11,7 @@
     "deploy": "gh-pages -d dist",
     "lint": "oxlint",
     "test": "vitest run",
+    "db:inspect": "node scripts/inspect-schema.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
