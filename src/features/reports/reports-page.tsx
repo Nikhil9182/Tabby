@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Download,
   Calendar,
@@ -44,9 +45,12 @@ import {
   useCurrency,
   useUsers,
 } from '@/hooks';
-import { formatMoney, toMajorUnits } from '@/domain/money/money';
+import { formatMoney, toMajorUnits, toMinorUnits } from '@/domain/money/money';
+import { exchangeRateService } from '@/services/exchange-rates/exchange-rate-service';
 import { formatDate } from '@/lib/date';
 import type { Expense } from '@/domain/models/types';
+
+const NO_RATES: Record<string, number> = {};
 
 const CHART_COLORS = [
   '#3b82f6', // blue
@@ -111,32 +115,84 @@ export function ReportsPage() {
     return active;
   }, [expenses, period]);
 
+  const reportCurrency = reportingCurrency.toUpperCase();
+
+  // Latest rates from each foreign currency into the report currency
+  const foreignCurrencies = useMemo(
+    () =>
+      [...new Set(expenses.map((e) => (e.originalCurrency || reportCurrency).toUpperCase()))]
+        .filter((c) => c !== reportCurrency)
+        .sort(),
+    [expenses, reportCurrency]
+  );
+
+  const { data: rates = NO_RATES } = useQuery<Record<string, number>>({
+    queryKey: ['report-rates', reportCurrency, foreignCurrencies.join(',')],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        foreignCurrencies.map(async (c) => {
+          try {
+            return [c, (await exchangeRateService.getLatestRate(c, reportCurrency)).rate] as const;
+          } catch {
+            return [c, 0] as const;
+          }
+        })
+      );
+      return Object.fromEntries(entries.filter(([, rate]) => rate > 0));
+    },
+    enabled: foreignCurrencies.length > 0,
+    staleTime: 1000 * 60 * 60 * 12,
+  });
+
+  // Your share of an expense, converted to the report currency. null = no rate available.
+  const myShareInReportCurrency = useCallback(
+    (e: Expense): number | null => {
+      const share =
+        e.sourceType === 'personal'
+          ? e.originalAmountMinor
+          : (splits[e.id] || []).find((s) => s.userId === currentUserId)?.shareMinor ?? 0;
+      const currency = (e.originalCurrency || reportCurrency).toUpperCase();
+      if (share === 0 || currency === reportCurrency) return share;
+      const rate = rates[currency];
+      if (!rate) return null;
+      return toMinorUnits(toMajorUnits(share, currency) * rate, reportCurrency);
+    },
+    [splits, currentUserId, reportCurrency, rates]
+  );
+
   // Calculations for Summary Cards
   const summaryStats = useMemo(() => {
     let totalMinor = 0;
     const catTotals: Record<string, number> = {};
     let personalMinor = 0;
+    let friendsMinor = 0;
     let groupMinor = 0;
+    let expenseCount = 0;
+    const unconverted = new Set<string>();
 
     filteredExpenses.forEach((e) => {
-      // For personal share: check if split exists
-      const expSplits = splits[e.id] || [];
-      const userSplit = expSplits.find((s) => s.userId === currentUserId);
-      const userShare = userSplit ? userSplit.shareMinor : e.originalAmountMinor;
+      const userShare = myShareInReportCurrency(e);
+      if (userShare === null) {
+        unconverted.add(e.originalCurrency.toUpperCase());
+        return;
+      }
+      if (userShare === 0) return; // you're not part of this expense
 
+      expenseCount += 1;
       totalMinor += userShare;
 
       const catName = (e.categoryId && categoryMap.get(e.categoryId)) || 'Uncategorized';
       catTotals[catName] = (catTotals[catName] || 0) + userShare;
 
-      if (e.sourceType === 'personal' || !e.groupId) {
+      if (e.sourceType === 'personal') {
         personalMinor += userShare;
-      } else {
+      } else if (e.groupId) {
         groupMinor += userShare;
+      } else {
+        friendsMinor += userShare;
       }
     });
 
-    const expenseCount = filteredExpenses.length;
     const avgMinor = expenseCount > 0 ? Math.round(totalMinor / expenseCount) : 0;
 
     let topCategory = 'None';
@@ -154,10 +210,12 @@ export function ReportsPage() {
       expenseCount,
       topCategory,
       personalMinor,
+      friendsMinor,
       groupMinor,
       catTotals,
+      unconverted: [...unconverted],
     };
-  }, [filteredExpenses, splits, currentUserId, categoryMap]);
+  }, [filteredExpenses, myShareInReportCurrency, categoryMap]);
 
   // Category Pie Chart Data
   const categoryChartData = useMemo(() => {
@@ -183,26 +241,28 @@ export function ReportsPage() {
       if (e.deletedAt) return;
       const key = formatDate(e.expenseDate, 'MMM yyyy');
       if (monthsMap[key] !== undefined) {
-        const expSplits = splits[e.id] || [];
-        const userSplit = expSplits.find((s) => s.userId === currentUserId);
-        const userShare = userSplit ? userSplit.shareMinor : e.originalAmountMinor;
-        monthsMap[key] += toMajorUnits(userShare, reportingCurrency);
+        monthsMap[key] += myShareInReportCurrency(e) ?? 0;
       }
     });
 
-    return Object.entries(monthsMap).map(([month, amount]) => ({
+    // Chart values in major units; tooltips convert back with toMinorUnits
+    return Object.entries(monthsMap).map(([month, amountMinor]) => ({
       month,
-      amount,
+      amount: toMajorUnits(amountMinor, reportCurrency),
     }));
-  }, [expenses, splits, currentUserId, reportingCurrency]);
+  }, [expenses, myShareInReportCurrency, reportCurrency]);
 
-  // Personal vs Group Breakdown Data
+  // Personal vs friends vs groups breakdown
   const typeChartData = useMemo(() => {
     return [
-      { name: 'Personal Expenses', value: toMajorUnits(summaryStats.personalMinor, reportingCurrency) },
-      { name: 'Group Splits', value: toMajorUnits(summaryStats.groupMinor, reportingCurrency) },
+      { name: 'Personal', value: toMajorUnits(summaryStats.personalMinor, reportCurrency), color: '#10b981' },
+      { name: 'With friends', value: toMajorUnits(summaryStats.friendsMinor, reportCurrency), color: '#3b82f6' },
+      { name: 'In groups', value: toMajorUnits(summaryStats.groupMinor, reportCurrency), color: '#8b5cf6' },
     ].filter((item) => item.value > 0);
-  }, [summaryStats, reportingCurrency]);
+  }, [summaryStats, reportCurrency]);
+
+  const formatChartValue = (val: unknown) =>
+    formatMoney(toMinorUnits(Number(val) || 0, reportCurrency), reportCurrency);
 
   // CSV Export
   const handleExportCSV = () => {
@@ -223,11 +283,11 @@ export function ReportsPage() {
       const groupName = e.groupId ? groupMap.get(e.groupId) || '' : 'Personal';
       const payer = users.find((u) => u.id === e.paidBy);
       const payerName = payer?.name || e.paidBy;
-      const expSplits = splits[e.id] || [];
-      const userSplit = expSplits.find((s) => s.userId === currentUserId);
-      const yourShare = userSplit
-        ? toMajorUnits(userSplit.shareMinor, e.originalCurrency)
-        : toMajorUnits(e.originalAmountMinor, e.originalCurrency);
+      const userSplit = (splits[e.id] || []).find((s) => s.userId === currentUserId);
+      const yourShare =
+        e.sourceType === 'personal'
+          ? toMajorUnits(e.originalAmountMinor, e.originalCurrency)
+          : toMajorUnits(userSplit?.shareMinor ?? 0, e.originalCurrency);
 
       return [
         `"${formatDate(e.expenseDate)}"`,
@@ -257,7 +317,7 @@ export function ReportsPage() {
     <div className="space-y-8 pb-16">
       <PageHeader
         title="Reports & Analytics"
-        description="Visualize spending habits, category breakdowns, and export ledger records."
+        description="See where your money goes and download your expenses."
         actions={
           <Button
             onClick={handleExportCSV}
@@ -281,7 +341,7 @@ export function ReportsPage() {
             <SelectTrigger className="min-w-0 flex-1 sm:flex-none sm:w-44 h-10 rounded-2xl bg-muted/30 border-0 text-xs font-semibold">
               <SelectValue placeholder="Period" />
             </SelectTrigger>
-            <SelectContent className="rounded-2xl">
+            <SelectContent>
               <SelectItem value="this-month">This Month</SelectItem>
               <SelectItem value="last-month">Last Month</SelectItem>
               <SelectItem value="last-3-months">Last 3 Months</SelectItem>
@@ -319,7 +379,7 @@ export function ReportsPage() {
               size="lg"
               className="text-foreground font-black text-2xl sm:text-3xl"
             />
-            <p className="text-xs text-muted-foreground font-medium mt-1">Your personal share</p>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Your share of all expenses</p>
           </div>
         </div>
 
@@ -337,7 +397,7 @@ export function ReportsPage() {
               size="lg"
               className="text-foreground font-black text-2xl sm:text-3xl"
             />
-            <p className="text-xs text-muted-foreground font-medium mt-1">Mean transaction size</p>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Your share per expense</p>
           </div>
         </div>
 
@@ -352,7 +412,7 @@ export function ReportsPage() {
             <h3 className="text-2xl sm:text-3xl font-black text-foreground truncate">
               {summaryStats.topCategory}
             </h3>
-            <p className="text-xs text-muted-foreground font-medium mt-1">Largest expenditure</p>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Where you spent the most</p>
           </div>
         </div>
 
@@ -367,7 +427,7 @@ export function ReportsPage() {
             <h3 className="text-2xl sm:text-3xl font-black text-foreground">
               {summaryStats.expenseCount}
             </h3>
-            <p className="text-xs text-muted-foreground font-medium mt-1">Transactions in period</p>
+            <p className="text-xs text-muted-foreground font-medium mt-1">Expenses you were part of</p>
           </div>
         </div>
       </div>
@@ -389,7 +449,7 @@ export function ReportsPage() {
                 <span>Monthly Spending Trend (Last 6 Months)</span>
               </CardTitle>
               <CardDescription>
-                Your personal spending share over time ({reportingCurrency}).
+                Your share of spending each month, in {reportCurrency}.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6 pt-4 h-72">
@@ -399,7 +459,7 @@ export function ReportsPage() {
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <RechartsTooltip
-                    formatter={(val: any) => [`${formatMoney(toMajorUnits(val * 100, reportingCurrency), reportingCurrency)}`, 'Spent']}
+                    formatter={(val: unknown) => [formatChartValue(val), 'Spent']}
                   />
                   <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -417,7 +477,7 @@ export function ReportsPage() {
                   <span>Category Breakdown</span>
                 </CardTitle>
                 <CardDescription>
-                  Distribution of expenditures across categories.
+                  What you spent on, by category.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-6 pt-4 h-72">
@@ -444,7 +504,7 @@ export function ReportsPage() {
                         ))}
                       </Pie>
                       <RechartsTooltip
-                        formatter={(val: any) => [`${formatMoney(toMajorUnits(val * 100, reportingCurrency), reportingCurrency)}`, 'Amount']}
+                        formatter={(val: unknown) => [formatChartValue(val), 'Amount']}
                       />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                     </PieChart>
@@ -458,10 +518,10 @@ export function ReportsPage() {
               <CardHeader className="p-6 pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Layers className="h-4 w-4 text-primary" />
-                  <span>Personal vs. Group Splits</span>
+                  <span>Personal, Friends & Groups</span>
                 </CardTitle>
                 <CardDescription>
-                  Comparison between solo expenses and group shared tabs.
+                  How your spending splits between solo costs, friends and groups.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-6 pt-4 h-72">
@@ -480,11 +540,12 @@ export function ReportsPage() {
                         outerRadius={80}
                         paddingAngle={3}
                       >
-                        <Cell fill="#10b981" />
-                        <Cell fill="#8b5cf6" />
+                        {typeChartData.map((item) => (
+                          <Cell key={item.name} fill={item.color} />
+                        ))}
                       </Pie>
                       <RechartsTooltip
-                        formatter={(val: any) => [`${formatMoney(toMajorUnits(val * 100, reportingCurrency), reportingCurrency)}`, 'Amount']}
+                        formatter={(val: unknown) => [formatChartValue(val), 'Amount']}
                       />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                     </PieChart>
@@ -498,8 +559,10 @@ export function ReportsPage() {
           <div className="p-4 rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground flex items-center gap-2">
             <Info className="h-4 w-4 text-primary shrink-0" />
             <span>
-              All transactions are calculated using integer minor units. Multi-currency conversions
-              utilize daily cached European Central Bank / Frankfurt exchange rates.
+              Amounts show your share of each expense. Expenses in other currencies are converted
+              to {reportCurrency} at today&apos;s exchange rate.
+              {summaryStats.unconverted.length > 0 &&
+                ` ${summaryStats.unconverted.join(', ')} expenses are left out until a rate is available.`}
             </span>
           </div>
         </div>
