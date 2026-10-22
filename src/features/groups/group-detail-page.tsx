@@ -357,14 +357,21 @@ export function GroupDetailPage() {
                   <Plus className="h-4 w-4 mr-1.5" />
                   Add Expense
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(`/settlements/new?groupId=${group.id}`)}
-                  className="rounded-2xl font-bold h-10 px-4"
-                >
-                  <ArrowRightLeft className="h-4 w-4 mr-1.5" />
-                  Settle Up
-                </Button>
+                {myNetMinor !== 0 ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveTab('balances')}
+                    className="rounded-2xl font-bold h-10 px-4"
+                  >
+                    <ArrowRightLeft className="h-4 w-4 mr-1.5" />
+                    Settle Up
+                  </Button>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs border border-emerald-500/20">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>All settled up</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -408,7 +415,7 @@ export function GroupDetailPage() {
                           variant="outline"
                           onClick={() =>
                             navigate(
-                              `/settlements/new?groupId=${group.id}&from=${debt.fromUserId}&to=${debt.toUserId}&amount=${debt.amountMinor}`
+                              `/settlements/new?groupId=${group.id}&from=${debt.fromUserId}&to=${debt.toUserId}&amount=${debt.amountMinor}&currency=${debt.currency || groupCurrency}&returnTo=/groups/${group.id}?tab=balances`
                             )
                           }
                         >
@@ -639,7 +646,7 @@ export function GroupDetailPage() {
                           size="sm"
                           onClick={() =>
                             navigate(
-                              `/settlements/new?groupId=${group.id}&from=${debt.fromUserId}&to=${debt.toUserId}&amount=${debt.amountMinor}`
+                              `/settlements/new?groupId=${group.id}&from=${debt.fromUserId}&to=${debt.toUserId}&amount=${debt.amountMinor}&currency=${debt.currency || groupCurrency}&returnTo=/groups/${group.id}?tab=balances`
                             )
                           }
                           className="gap-1"

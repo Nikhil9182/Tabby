@@ -307,31 +307,34 @@ export function DashboardPage() {
             <div className="hidden lg:block h-12 w-[1.5px] bg-black/15" />
 
             {/* People Owe You */}
-            <div className="space-y-0.5">
+            <Link
+              to="/friends"
+              className="space-y-0.5 group hover:opacity-85 transition-opacity"
+            >
               <p className="text-xl sm:text-2xl font-black text-black">
                 {formatMoney(userBalance.totalOwedToYou, curr)}
               </p>
-              <p className="text-xs sm:text-sm text-black/75 font-semibold">People owe you</p>
-            </div>
+              <p className="text-xs sm:text-sm text-black/75 font-semibold group-hover:underline flex items-center gap-1">
+                <span>People owe you</span>
+                <ArrowRight className="h-3 w-3 inline opacity-70 group-hover:opacity-100" />
+              </p>
+            </Link>
 
             <div className="hidden sm:block h-12 w-[1.5px] bg-black/15" />
 
             {/* You Owe */}
-            <div className="space-y-0.5">
+            <Link
+              to="/friends"
+              className="space-y-0.5 group hover:opacity-85 transition-opacity"
+            >
               <p className="text-xl sm:text-2xl font-black text-black">
                 {formatMoney(userBalance.totalOwed, curr)}
               </p>
-              <p className="text-xs sm:text-sm text-black/75 font-semibold">You owe</p>
-            </div>
-
-            {/* Record Settlement Action Pill Button */}
-            <button
-              onClick={() => navigate("/settlements/new")}
-              className="mt-2 sm:mt-0 w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-black text-white hover:bg-black/85 font-bold text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md active:scale-98"
-            >
-              <span>Record settlement</span>
-              <ArrowRight className="h-4 w-4 stroke-[2.5]" />
-            </button>
+              <p className="text-xs sm:text-sm text-black/75 font-semibold group-hover:underline flex items-center gap-1">
+                <span>You owe</span>
+                <ArrowRight className="h-3 w-3 inline opacity-70 group-hover:opacity-100" />
+              </p>
+            </Link>
           </div>
         </div>
       </div>
@@ -661,14 +664,14 @@ export function DashboardPage() {
           )}
         </div>
 
-        {/* Right Column: Settle up (lg:col-span-4) */}
+        {/* Right Column: Friends & Balances (lg:col-span-4) */}
         <div className="lg:col-span-4 rounded-3xl bg-card border border-border/80 p-5 sm:p-7 shadow-xs space-y-5">
           <div className="flex items-center justify-between pb-4 border-b border-border/60">
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
-              Settle up
+              Friends &amp; Balances
             </h2>
             <Link
-              to="/settlements"
+              to="/friends"
               className="text-xs sm:text-sm font-bold text-[#0055FF] hover:underline"
             >
               See all
@@ -682,9 +685,10 @@ export function DashboardPage() {
                 const formattedAmt = formatMoney(person.amountMinor, person.currency);
 
                 return (
-                  <div
+                  <Link
                     key={person.id}
-                    className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors gap-3"
+                    to={`/friends?friendId=${person.id}`}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 hover:border-border/80 transition-all gap-3 group"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
@@ -696,7 +700,7 @@ export function DashboardPage() {
                         {person.initials}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-foreground leading-tight truncate">
+                        <p className="text-sm font-bold text-foreground leading-tight truncate group-hover:text-[#0055FF] transition-colors">
                           {person.name}
                         </p>
                         <p className="text-xs text-muted-foreground font-medium">
@@ -705,23 +709,20 @@ export function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sm sm:text-base font-black text-foreground">
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <span
+                        className={cn(
+                          "text-sm sm:text-base font-black",
+                          person.type === "owe"
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-emerald-600 dark:text-emerald-400"
+                        )}
+                      >
                         {formattedAmt}
                       </span>
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          navigate(
-                            `/settlements/new?fromUserId=${person.fromUserId}&toUserId=${person.toUserId}&amountMinor=${person.amountMinor}&currency=${person.currency}`
-                          )
-                        }
-                        className="h-8 px-3.5 rounded-xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold text-xs shadow-2xs transition-transform active:scale-95"
-                      >
-                        Settle
-                      </Button>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 group-hover:text-[#0055FF] transition-all" />
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -733,30 +734,30 @@ export function DashboardPage() {
               </div>
               <h3 className="font-bold text-base text-foreground">All tabs clear!</h3>
               <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                You have no outstanding debts or pending settlements.
+                You have no outstanding debts with your friends.
               </p>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate("/settlements/new")}
+                onClick={() => navigate("/friends")}
                 className="mt-1 rounded-xl text-xs font-semibold"
               >
-                Record manual settlement
+                View all friends
               </Button>
             </div>
           )}
 
-          {/* Settle Up Bottom Helper Box */}
+          {/* Bottom Helper Box */}
           <div className="p-4 rounded-2xl bg-muted/40 border border-border/50 flex items-center gap-3.5">
             <div className="h-9 w-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 text-muted-foreground">
               <Users className="h-4 w-4" />
             </div>
             <div>
               <p className="text-xs font-bold text-foreground leading-snug">
-                {settleList.length} pending settlement{settleList.length === 1 ? "" : "s"}
+                {settleList.length} active balance{settleList.length === 1 ? "" : "s"}
               </p>
               <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                Settle up to keep your group balances even.
+                Open any friend or group to review history and settle up.
               </p>
             </div>
           </div>
