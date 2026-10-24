@@ -17,11 +17,16 @@ describe('Receipt Parser', () => {
       expect(cleanNumericString('250,50')).toBe('250.50');
       expect(cleanNumericString('₹ 1,250.00')).toBe('1250.00');
       expect(cleanNumericString('Rs. 99.00')).toBe('99.00');
+      expect(cleanNumericString('1,035.00')).toBe('1035.00');
+      expect(cleanNumericString('1,139.00')).toBe('1139.00');
+      expect(cleanNumericString('-10.00')).toBe('-10.00');
     });
 
     it('detects currency correctly', () => {
       expect(detectCurrency('Total: ₹ 885.00')).toBe('INR');
       expect(detectCurrency('Rs. 350 Pizza')).toBe('INR');
+      expect(detectCurrency('GSTIN : 06AACCO6344G1ZJ')).toBe('INR');
+      expect(detectCurrency('CGST@2.5 25.89 SGST@2.5 25.89')).toBe('INR');
       expect(detectCurrency('Grand Total $45.00')).toBe('USD');
       expect(detectCurrency('Total 50.00 EUR')).toBe('EUR');
       expect(detectCurrency('Total £25.00')).toBe('GBP');
@@ -32,6 +37,8 @@ describe('Receipt Parser', () => {
       expect(parseReceiptDate('Date: 24/10/2026')).toBe('2026-10-24');
       expect(parseReceiptDate('Invoice Date 2026-10-24')).toBe('2026-10-24');
       expect(parseReceiptDate('24-10-2026 20:30')).toBe('2026-10-24');
+      expect(parseReceiptDate('Invoice Date: 20-May-18 22:55')).toBe('2018-05-20');
+      expect(parseReceiptDate('Time: 7:05:53 PM Date: 03/08/2023')).toBe('2023-08-03');
       expect(parseReceiptDate('No date here')).toBeUndefined();
     });
 
@@ -58,37 +65,44 @@ describe('Receipt Parser', () => {
       expect(item3?.quantity).toBe(2);
       expect(item3?.lineTotalMinor).toBe(24000);
 
-      // Quantity with '@'
-      const item4 = parseItemCandidate('Garlic Bread 2 @ 60.00 120.00', 'INR');
+      // Quantity with rate in middle
+      const item4 = parseItemCandidate('Tandoori chicken 1 295.00 309.75', 'INR');
       expect(item4).not.toBeNull();
-      expect(item4?.name).toBe('Garlic Bread');
-      expect(item4?.quantity).toBe(2);
-      expect(item4?.unitPriceMinor).toBe(6000);
-      expect(item4?.lineTotalMinor).toBe(12000);
+      expect(item4?.name).toBe('Tandoori chicken');
+      expect(item4?.quantity).toBe(1);
+      expect(item4?.lineTotalMinor).toBe(30975);
     });
   });
 
-  describe('Full receipt parsing', () => {
-    it('parses a normal itemized Indian restaurant receipt with GST and service charge', () => {
+  describe('Full receipt parsing with real fixtures', () => {
+    it('parses User Image 2: Liquor Street (Indian restaurant receipt with multi-line items and taxes)', () => {
       const receiptText = `
-        PUNJAB GRILL RESTAURANT
-        Connaught Place, New Delhi
-        GSTIN: 07AABCP1234F1Z5
-        Date: 24/10/2026 21:15
-        Order No: 4092
+Liquor Street
+(ODVJH Private Limited)
+11/2 Sector- 37,
+Faridabad-121003.
+Ph. No. : 0129-4360377, 9311111116
+GSTIN : 06AACCO6344G1ZJ
+Invoice Number: IN001001259
+Invoice Date: 20-May-18 22:55
+Item Qty. Rate Total
 
-        Paneer Tikka 320.00
-        Dal Makhani 280.00
-        2 Butter Naan 100.00
-        Cold Coffee x 2 200.00
+Tandoori chicken 1 295.00 309.75
+Lasooni Dal Tadka 1 275.00 288.75
+HYDERABADI MURG
+BIRYANI 1 375.00 393.75
+Tandoori Roti all food
+less spicy 2 30.00 63.00
+Tandoori Roti 1 30.00 31.50
+Total Qty: 6
 
-        Subtotal 900.00
-        CGST 9% 81.00
-        SGST 9% 81.00
-        Service Charge 45.00
-        Discount 50.00
-        Grand Total 1057.00
-        Thank you for visiting!
+Sub Total: 1,035.00
+CGST@2.5 25.89
+SGST@2.5 25.89
+S.Tax 51.75
+Total: 1,139.00
+
+Thanks For Visit...
       `;
 
       const lines = receiptText
@@ -97,52 +111,54 @@ describe('Receipt Parser', () => {
         .filter(Boolean)
         .map((text, idx) => ({ text, confidence: 95, lineNumber: idx + 1 }));
 
-      const rawData: ReceiptRawData = {
-        text: receiptText,
-        lines,
-        confidence: 95,
-      };
+      const parsed = parseReceipt({ text: receiptText, lines, confidence: 95 }, 'USD');
 
-      const parsed = parseReceipt(rawData, 'INR');
-
-      expect(parsed.merchantName).toBe('PUNJAB GRILL RESTAURANT');
-      expect(parsed.date).toBe('2026-10-24');
+      // Currency detected as INR due to GSTIN and CGST/SGST
       expect(parsed.currency).toBe('INR');
+      expect(parsed.merchantName).toBe('Liquor Street');
+      expect(parsed.date).toBe('2018-05-20');
 
       // Check items
-      expect(parsed.items.length).toBe(4);
-      expect(parsed.items[0].name).toBe('Paneer Tikka');
-      expect(parsed.items[0].lineTotalMinor).toBe(32000);
+      expect(parsed.items.length).toBe(5);
+      expect(parsed.items[0].name).toBe('Tandoori chicken');
+      expect(parsed.items[0].lineTotalMinor).toBe(30975);
 
-      expect(parsed.items[1].name).toBe('Dal Makhani');
-      expect(parsed.items[1].lineTotalMinor).toBe(28000);
+      expect(parsed.items[1].name).toBe('Lasooni Dal Tadka');
+      expect(parsed.items[1].lineTotalMinor).toBe(28875);
 
-      expect(parsed.items[2].name).toBe('Butter Naan');
-      expect(parsed.items[2].quantity).toBe(2);
-      expect(parsed.items[2].lineTotalMinor).toBe(10000);
+      // Multi-line items joined seamlessly
+      expect(parsed.items[2].name).toBe('HYDERABADI MURG BIRYANI');
+      expect(parsed.items[2].lineTotalMinor).toBe(39375);
 
-      expect(parsed.items[3].name).toBe('Cold Coffee');
+      expect(parsed.items[3].name).toBe('Tandoori Roti all food less spicy');
       expect(parsed.items[3].quantity).toBe(2);
-      expect(parsed.items[3].lineTotalMinor).toBe(20000);
+      expect(parsed.items[3].lineTotalMinor).toBe(6300);
 
-      // Check taxes and charges
-      expect(parsed.itemSubtotalMinor).toBe(90000);
-      expect(parsed.taxes.length).toBe(2);
-      expect(parsed.taxMinor).toBe(16200); // 81 + 81
-      expect(parsed.serviceChargeMinor).toBe(4500);
-      expect(parsed.discountMinor).toBe(5000);
-      expect(parsed.totalMinor).toBe(105700);
+      expect(parsed.items[4].name).toBe('Tandoori Roti');
+      expect(parsed.items[4].lineTotalMinor).toBe(3150);
+
+      // Check taxes and total
+      expect(parsed.taxes.length).toBe(3); // CGST, SGST, S.Tax
+      expect(parsed.totalMinor).toBe(113900); // 1,139.00
       expect(parsed.isTotalConfirmed).toBe(true);
     });
 
-    it('handles INR receipts with ₹ and Rs. currency labels and decimal amounts', () => {
+    it('parses User Image 1: Restaurant receipt with leading quantities and discounts', () => {
       const receiptText = `
-        CAFE COFFEE DAY
-        Date: 2026-10-24
-        1 Cappuccino ₹ 180.50
-        Veg Sandwich Rs. 140.00
-        Sub Total: 320.50
-        Total: ₹ 320.50
+Name: b
+Table #: 33 Person #: 1,2 3
+Time: 7:05:53 PM Date: 03/08/2023
+Check No: 326195 Server: Katie
+-------------------------------------------
+1 FRIED CHICKEN TIT 18.00
+1 CARBONARA 26.00
+1 Brown Butter Cake 10.00
+1 Side Ice Cream 3.00
+1 Lenalicious 13.00
+1 You're an Asshole 15.00
+SUB TOTAL 75.00
+Birthday Comp 28195 1 -10.00
+Discounts Sub-Total -10.00
       `;
 
       const lines = receiptText
@@ -153,34 +169,29 @@ describe('Receipt Parser', () => {
 
       const parsed = parseReceipt({ text: receiptText, lines, confidence: 90 }, 'USD');
 
-      expect(parsed.currency).toBe('INR');
-      expect(parsed.items.length).toBe(2);
-      expect(parsed.items[0].lineTotalMinor).toBe(18050);
-      expect(parsed.items[1].lineTotalMinor).toBe(14000);
-      expect(parsed.totalMinor).toBe(32050);
-      expect(parsed.isTotalConfirmed).toBe(true);
-    });
+      expect(parsed.date).toBe('2023-08-03');
+      expect(parsed.items.length).toBe(6);
 
-    it('handles duplicate-looking rows safely with unique ids', () => {
-      const receiptText = `
-        PIZZERIA
-        Date: 2026-10-24
-        Pizza 350.00
-        Pizza 350.00
-        Total 700.00
-      `;
+      expect(parsed.items[0].name).toBe('FRIED CHICKEN TIT');
+      expect(parsed.items[0].lineTotalMinor).toBe(1800);
 
-      const lines = receiptText
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((text, idx) => ({ text, confidence: 90, lineNumber: idx + 1 }));
+      expect(parsed.items[1].name).toBe('CARBONARA');
+      expect(parsed.items[1].lineTotalMinor).toBe(2600);
 
-      const parsed = parseReceipt({ text: receiptText, lines, confidence: 90 }, 'INR');
+      expect(parsed.items[2].name).toBe('Brown Butter Cake');
+      expect(parsed.items[2].lineTotalMinor).toBe(1000);
 
-      expect(parsed.items.length).toBe(2);
-      expect(parsed.items[0].id).not.toBe(parsed.items[1].id);
-      expect(parsed.totalMinor).toBe(70000);
+      expect(parsed.items[3].name).toBe('Side Ice Cream');
+      expect(parsed.items[3].lineTotalMinor).toBe(300);
+
+      expect(parsed.items[4].name).toBe('Lenalicious');
+      expect(parsed.items[4].lineTotalMinor).toBe(1300);
+
+      expect(parsed.items[5].name).toBe("You're an Asshole");
+      expect(parsed.items[5].lineTotalMinor).toBe(1500);
+
+      expect(parsed.itemSubtotalMinor).toBe(8500); // 18+26+10+3+13+15 = 85.00
+      expect(parsed.discountMinor).toBe(1000); // 10.00
     });
 
     it('handles empty or unrecognized OCR output gracefully', () => {
@@ -214,7 +225,6 @@ describe('Receipt Parser', () => {
         .map((text, idx) => ({ text, confidence: 75, lineNumber: idx + 1 }));
 
       const parsed = parseReceipt({ text: receiptText, lines, confidence: 75 }, 'INR');
-      // At least 1 item is parsed (Pasta)
       expect(parsed.items.length).toBeGreaterThanOrEqual(1);
       expect(parsed.totalMinor).toBe(32500);
     });

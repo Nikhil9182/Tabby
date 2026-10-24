@@ -121,15 +121,30 @@ export class OCRService {
       const page = result.data;
       const rawText = page.text || '';
 
-      const lines: ReceiptRawLine[] = (page.lines || []).map((line: any, idx: number) => ({
-        text: (line.text || '').trim(),
-        confidence: typeof line.confidence === 'number' ? line.confidence : 0,
-        words: (line.words || []).map((w: any) => ({
-          text: (w.text || '').trim(),
-          confidence: typeof w.confidence === 'number' ? w.confidence : 0,
-        })),
-        lineNumber: idx + 1,
-      })).filter((l: ReceiptRawLine) => l.text.length > 0);
+      // Tesseract.js v7 provides recognized text; page.lines may be undefined
+      let lines: ReceiptRawLine[] = [];
+      if (Array.isArray(page.lines) && page.lines.length > 0) {
+        lines = page.lines
+          .map((line: any, idx: number) => ({
+            text: (line.text || '').trim(),
+            confidence: typeof line.confidence === 'number' ? line.confidence : 0,
+            words: (line.words || []).map((w: any) => ({
+              text: (w.text || '').trim(),
+              confidence: typeof w.confidence === 'number' ? w.confidence : 0,
+            })),
+            lineNumber: idx + 1,
+          }))
+          .filter((l: ReceiptRawLine) => l.text.length > 0);
+      } else if (rawText) {
+        lines = rawText
+          .split('\n')
+          .map((lineText: string, idx: number) => ({
+            text: lineText.trim(),
+            confidence: typeof page.confidence === 'number' ? page.confidence : 80,
+            lineNumber: idx + 1,
+          }))
+          .filter((l: ReceiptRawLine) => l.text.length > 0);
+      }
 
       // Overall average confidence
       const confidence = typeof page.confidence === 'number' ? page.confidence : 0;

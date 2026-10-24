@@ -10,9 +10,16 @@ import type {
 
 // Common regex patterns
 const SEPARATOR_RE = /^[=\-_*#.]{3,}$/;
-const PHONE_RE = /(?:ph|phone|tel|mobile|call|contact)[:.\s]*[+]?\d[\d\s-]{7,}/i;
+const PHONE_RE = /\b(?:ph(?:\.?\s*no\.?)?|phone|tel|mobile|call|contact|fax)[:.\s]*[+]?\d[\d\s,-]{6,}/i;
 const GSTIN_RE = /\b(?:gstin|gst\s*no|gst|tin|vat\s*tin|pan|fssai)[:.\s]*[0-9a-z]{8,}/i;
-const INVOICE_NO_RE = /\b(?:bill\s*no|inv(?:oice)?\s*no|receipt\s*no|order\s*no|token\s*no|chk|check\s*no|table\s*no)[:.\s]*[a-z0-9\-_/]+/i;
+const INVOICE_NO_RE = /\b(?:inv(?:oice)?|bill|receipt|order|token|check|chk|creck|table|pos)(?:\s*(?:no\.?|number|id|#))?[:.\s]*[a-z0-9\-_/]+/i;
+const COMPANY_ENTITY_RE = /\b(?:pvt\.?\s*ltd\.?|private\s*limited|ltd\.?|limited|llp|inc\.?|corp\.?|co\.?)\b/i;
+const ADDRESS_RE = /\b(?:sector|road|street|nagar|marg|lane|block|floor|bldg|building|complex|plaza|colony|enclave|opp|opposite|near|behind|pin|pincode|post)\b/i;
+const PINCODE_RE = /\b[a-z\s]+[-]\s*\d{6}\b/i;
+const TABLE_PERSON_RE = /\b(?:table|person|pax|server|waiter|steward|station|counter)\b[:.\s#]*\w+/i;
+const NAME_FIELD_RE = /^\s*name\s*[:]/i;
+const TOTAL_QTY_RE = /\b(?:total\s*qty|tot\s*qty|qty\s*total)\b/i;
+
 const DATE_RE = /\b(?:\d{1,2}[-/.](?:[0-9]{1,2}|[a-z]{3})[-/.]\d{2,4}|\d{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+\d{4})\b/i;
 const TIME_RE = /\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/i;
 const PAYMENT_METHOD_RE = /\b(?:cash\s*tendered|change\s*due|paid\s*via|upi|paytm|gpay|phonepe|visa|mastercard|amex|card\s*ending|debit\s*card|credit\s*card|net\s*banking)\b/i;
@@ -20,9 +27,9 @@ const PAYMENT_METHOD_RE = /\b(?:cash\s*tendered|change\s*due|paid\s*via|upi|payt
 // Totals and charge patterns
 const GRAND_TOTAL_RE = /\b(?:grand\s*total|net\s*payable|net\s*amount|amount\s*due|bill\s*total|final\s*total|total\s*payable|total\s*due)\b/i;
 const TOTAL_RE = /\b(?:total|amount|tot)\b/i;
-const SUBTOTAL_RE = /\b(?:sub\s*total|subtotal|sub-total|item\s*total|food\s*total|gross\s*amount|gross\s*total)\b/i;
-const TAX_RE = /\b(cgst|sgst|igst|gst|vat|sales\s*tax|service\s*tax|tax)\b/i;
-const DISCOUNT_RE = /\b(?:discount|disc|promo|coupon|offer|voucher|special\s*discount|off)\b/i;
+const SUBTOTAL_RE = /\b(?:sub\s*total|subtotal|sub-total|s[u3b]b?\s*total|item\s*total|food\s*total|gross\s*amount|gross\s*total)\b/i;
+const TAX_RE = /\b(cgst|sgst|igst|gst|vat|sales\s*tax|service\s*tax|s\.?\s*tax|tax)\b/i;
+const DISCOUNT_RE = /\b(?:discount|disc|promo|coupon|offer|voucher|special\s*discount|comp|birthday\s*comp)\b/i;
 const SERVICE_CHARGE_RE = /\b(?:service\s*charge|service\s*fee|s\.?c\.?)\b/i;
 const TIP_RE = /\b(?:tip|gratuity)\b/i;
 const ROUND_OFF_RE = /\b(?:round\s*off|roundoff|rounding)\b/i;
@@ -55,18 +62,18 @@ export function cleanNumericString(raw: string): string {
     cleaned = cleaned.replace(/-/g, '');
   }
 
-  // Handle comma as decimal separator if followed by 2 digits at end e.g. 350,00 -> 350.00
-  if (/,\d{2}$/.test(cleaned)) {
-    cleaned = cleaned.replace(/,(\d{2})$/, '.$1');
+  // Handle comma as decimal separator if followed by 1 or 2 digits at end e.g. 350,00 -> 350.00
+  // ONLY if there are no dots elsewhere in the number
+  if (/,\d{1,2}$/.test(cleaned) && !cleaned.includes('.')) {
+    cleaned = cleaned.replace(/,(\d{1,2})$/, '.$1');
   } else {
-    // Comma as thousands separator e.g. 1,250.00 -> 1250.00
+    // Comma as thousands separator e.g. 1,035.00 -> 1035.00
     cleaned = cleaned.replace(/,/g, '');
   }
 
   // Fix common OCR mistakes inside numeric sequences
-  // Only replace letters if the token mostly contains digits
   const digitCount = (cleaned.match(/\d/g) || []).length;
-  if (digitCount >= 1 && cleaned.length <= 10) {
+  if (digitCount >= 1 && cleaned.length <= 12) {
     cleaned = cleaned
       .replace(/[oO]/g, '0')
       .replace(/[lI|]/g, '1')
@@ -92,6 +99,7 @@ export function cleanNumericString(raw: string): string {
  */
 export function detectCurrency(text: string, fallback: string = 'INR'): string {
   if (/[₹]|(?:\b(?:rs\.?|inr)\b)/i.test(text)) return 'INR';
+  if (/\b(?:gstin|cgst|sgst|igst|fssai)\b/i.test(text)) return 'INR';
   if (/[$]|(?:\busd\b)/i.test(text)) return 'USD';
   if (/[€]|(?:\beur\b)/i.test(text)) return 'EUR';
   if (/[£]|(?:\bgbp\b)/i.test(text)) return 'GBP';
@@ -116,23 +124,46 @@ export function parseReceiptDate(text: string): string | undefined {
       return `${year}-${month}-${day}`;
     }
 
-    // 2. Format: DD-MM-YYYY or DD/MM/YYYY
-    const dmyMatch = rawDate.match(/^(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.](\d{2,4})$/);
+    // 2. Format: DD-MM-YYYY or DD/MM/YYYY or DD-Mon-YY
+    const dmyMatch = rawDate.match(/^(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2]|[a-z]{3})[-/.](\d{2,4})$/i);
     if (dmyMatch) {
       const day = dmyMatch[1].padStart(2, '0');
-      const month = dmyMatch[2].padStart(2, '0');
+      const rawMonth = dmyMatch[2];
+      let monthStr = '';
+      if (/^\d+$/.test(rawMonth)) {
+        monthStr = rawMonth.padStart(2, '0');
+      } else {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        const mIdx = monthNames.indexOf(rawMonth.toLowerCase());
+        if (mIdx !== -1) {
+          monthStr = String(mIdx + 1).padStart(2, '0');
+        }
+      }
+
       let year = dmyMatch[3];
+      if (year.length === 2) year = `20${year}`;
+
+      if (monthStr) {
+        return `${year}-${monthStr}-${day}`;
+      }
+    }
+
+    // 3. Format: MM/DD/YYYY
+    const mdyMatch = rawDate.match(/^(0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\d|3[01])[-/.](\d{2,4})$/);
+    if (mdyMatch) {
+      const month = mdyMatch[1].padStart(2, '0');
+      const day = mdyMatch[2].padStart(2, '0');
+      let year = mdyMatch[3];
       if (year.length === 2) year = `20${year}`;
       return `${year}-${month}-${day}`;
     }
 
-    // 3. Native parse fallback
+    // 4. Native parse fallback
     const parsed = new Date(rawDate);
     if (!isNaN(parsed.getTime())) {
       const y = parsed.getFullYear();
       const m = String(parsed.getMonth() + 1).padStart(2, '0');
       const d = String(parsed.getDate()).padStart(2, '0');
-      // Validate reasonable year (e.g. 2000 to 2099)
       if (y >= 2000 && y <= 2099) {
         return `${y}-${m}-${d}`;
       }
@@ -148,14 +179,14 @@ export function parseReceiptDate(text: string): string | undefined {
  * Finds all candidate monetary amounts at the end or within a string.
  */
 export function extractCandidateAmounts(line: string, currency: string): Array<{ raw: string; amountMinor: number; index: number }> {
-  // Regex finding numbers with optional decimals and optional currency symbols
-  const amountRegex = /(?:[₹$€£]|(?:rs\.?|inr|usd|eur|gbp)\.?\s*)?\s*(-?\d{1,6}(?:[.,]\d{2})|-?\d{1,6})\b/gi;
+  // Matches monetary amounts with optional thousands separator: e.g. 1,035.00, 1139.00, 18.00, 3.0, -10.00
+  const amountRegex = /(?:[₹$€£]|(?:rs\.?|inr|usd|eur|gbp)\.?\s*)?\s*(-?\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?|-?\d+(?:\.\d{1,2})?|-?\d+,\d{2})\b/gi;
   const candidates: Array<{ raw: string; amountMinor: number; index: number }> = [];
 
   let m: RegExpExecArray | null;
   while ((m = amountRegex.exec(line)) !== null) {
-    // If preceded by colon e.g. 21:15, it's a timestamp, not a monetary amount
-    if (m.index > 0 && line[m.index - 1] === ':') {
+    // If preceded by digit + colon e.g. 21:15 or 7:05:53, it's a timestamp, not a monetary amount
+    if (m.index > 0 && line[m.index - 1] === ':' && /\d:$/.test(line.slice(0, m.index))) {
       continue;
     }
 
@@ -164,10 +195,9 @@ export function extractCandidateAmounts(line: string, currency: string): Array<{
     if (!cleaned) continue;
 
     const numVal = parseFloat(cleaned);
-    // Ignore unreasonable amounts like 0 (unless explicit) or telephone numbers
-    if (isNaN(numVal) || Math.abs(numVal) > 10000000) continue;
+    if (isNaN(numVal) || Math.abs(numVal) > 100000000) continue;
 
-    // Reject standalone 4-digit numbers that match current or recent years (e.g. 2024, 2025, 2026)
+    // Reject standalone 4-digit numbers that match recent years e.g. 2023, 2024, 2025, 2026
     if (!cleaned.includes('.') && /^(?:19|20)\d{2}$/.test(cleaned) && m.index < line.length - 8) {
       continue;
     }
@@ -190,14 +220,19 @@ export function extractCandidateAmounts(line: string, currency: string): Array<{
 /**
  * Determines whether a line is purely metadata or informational.
  */
-function isMetadataLine(line: string): boolean {
+export function isMetadataLine(line: string): boolean {
   if (SEPARATOR_RE.test(line)) return true;
   if (PHONE_RE.test(line)) return true;
   if (GSTIN_RE.test(line)) return true;
   if (INVOICE_NO_RE.test(line)) return true;
+  if (COMPANY_ENTITY_RE.test(line)) return true;
+  if (ADDRESS_RE.test(line) && /\d/.test(line)) return true;
+  if (PINCODE_RE.test(line)) return true;
+  if (TABLE_PERSON_RE.test(line)) return true;
+  if (NAME_FIELD_RE.test(line)) return true;
+  if (TOTAL_QTY_RE.test(line)) return true;
   if (PAYMENT_METHOD_RE.test(line)) return true;
-  if (/\b(?:welcome|visit\s*again|thank\s*you|customer\s*copy|merchant\s*copy|duplicate)\b/i.test(line)) return true;
-  if (/\b(?:server|cashier|waiter|steward|counter|station|pax|guests?)\b[:.\s]*\w+/i.test(line)) return true;
+  if (/\b(?:welcome|visit\s*again|thank\s*you|thanks\s*for\s*visit|customer\s*copy|merchant\s*copy|duplicate)\b/i.test(line)) return true;
   if (/\b(?:wifi|password|fssai|tin|cin|pan)\b/i.test(line)) return true;
   if (/^\s*(?:date|time)\s*[:.\s]/i.test(line)) return true;
   if (DATE_RE.test(line) && (TIME_RE.test(line) || /\b(?:date|time|inv|bill)\b/i.test(line))) return true;
@@ -205,21 +240,15 @@ function isMetadataLine(line: string): boolean {
 }
 
 /**
- * Checks if line is a header row (e.g. "Item Qty Price Amount").
+ * Checks if line is a header row (e.g. "Item Qty Rate Total").
  */
-function isHeaderRow(line: string): boolean {
-  return /\b(?:item|particulars|description|qty|quantity|rate|price|unit\s*price|amount|mrp)\b/i.test(line) &&
-    /\b(?:qty|rate|amount|price)\b/i.test(line);
+export function isHeaderRow(line: string): boolean {
+  return /\b(?:item|particulars|description)\b/i.test(line) &&
+    /\b(?:qty|rate|amount|price|total)\b/i.test(line);
 }
 
 /**
  * Attempts to parse an item row from a line.
- * Handles formats like:
- * - Pizza 350.00
- * - 2 Coffee 200.00
- * - Coffee x 2 200.00
- * - Coffee 2 @ 100.00 200.00
- * - Butter Naan 4 40.00 160.00
  */
 export function parseItemCandidate(
   line: string,
@@ -262,7 +291,7 @@ export function parseItemCandidate(
   let unitPriceMinor: number | null = null;
   let itemName = textBefore;
 
-  // Pattern 1: Leading quantity: e.g. "2 Coffee" or "2x Coffee" or "2 x Coffee"
+  // Pattern 1: Leading quantity: e.g. "1 FRIZD CHICKEN TIT" or "2 Coffee" or "2x Coffee"
   const leadingQtyMatch = itemName.match(/^(\d{1,2})\s*(?:x|\*|\@)?\s+(.+)$/i);
   if (leadingQtyMatch) {
     const q = parseInt(leadingQtyMatch[1], 10);
@@ -272,18 +301,8 @@ export function parseItemCandidate(
     }
   }
 
-  // Pattern 2: Trailing quantity with 'x' or '@': e.g. "Coffee x 2" or "Coffee 2x" or "Coffee @ 100.00"
-  const trailingQtyMatch = itemName.match(/^(.+?)\s+(?:x|\*)\s*(\d{1,2})$/i);
-  if (trailingQtyMatch) {
-    const q = parseInt(trailingQtyMatch[2], 10);
-    if (q > 0 && q <= 99) {
-      quantity = q;
-      itemName = trailingQtyMatch[1].trim();
-    }
-  }
-
-  // Pattern 3: Explicit quantity and unit price: e.g. "Coffee 2 @ 100.00" or "Naan 4 40.00"
-  const qtyAndRateMatch = itemName.match(/^(.+?)\s+(\d{1,2})\s+(?:@\s*)?([₹$€£]?\s*\d+(?:[.,]\d{2})?)$/i);
+  // Pattern 2: Explicit quantity and rate: e.g. "Tandoori chicken 1 295.00" or "Naan 4 40.00"
+  const qtyAndRateMatch = itemName.match(/^(.+?)\s+(\d{1,2})\s+(?:@\s*)?([₹$€£]?\s*\d+(?:[.,]\d{1,2})?)$/i);
   if (qtyAndRateMatch) {
     const q = parseInt(qtyAndRateMatch[2], 10);
     const unitRateStr = cleanNumericString(qtyAndRateMatch[3]);
@@ -298,10 +317,20 @@ export function parseItemCandidate(
     }
   }
 
+  // Pattern 3: Trailing quantity with 'x' or '@': e.g. "Coffee x 2" or "Coffee 2x"
+  const trailingQtyMatch = itemName.match(/^(.+?)\s+(?:x|\*)\s*(\d{1,2})$/i);
+  if (trailingQtyMatch) {
+    const q = parseInt(trailingQtyMatch[2], 10);
+    if (q > 0 && q <= 99) {
+      quantity = q;
+      itemName = trailingQtyMatch[1].trim();
+    }
+  }
+
   // If quantity > 1 and unitPrice is not set, compute unit price
   if (quantity > 1 && unitPriceMinor === null) {
     unitPriceMinor = Math.round(lineTotalMinor / quantity);
-  } else if (quantity === 1) {
+  } else if (quantity === 1 && unitPriceMinor === null) {
     unitPriceMinor = lineTotalMinor;
   }
 
@@ -334,7 +363,12 @@ export function parseReceipt(
   fallbackCurrency: string = 'INR'
 ): ParsedReceipt {
   const fullText = rawData.text || '';
-  const lines = rawData.lines || [];
+  // Fall back to splitting rawText by newlines if lines is not populated
+  const rawLines = rawData.lines && rawData.lines.length > 0
+    ? rawData.lines
+    : fullText.split('\n').map((t, idx) => ({ text: t.trim(), confidence: rawData.confidence || 80, lineNumber: idx + 1 }));
+
+  const lines = rawLines.filter((l) => l.text.length > 0);
   const detectedCurrency = detectCurrency(fullText, fallbackCurrency);
 
   let merchantName: string | undefined;
@@ -352,8 +386,8 @@ export function parseReceipt(
   // 1. Detect Receipt Date from anywhere in text
   receiptDate = parseReceiptDate(fullText);
 
-  // 2. Scan lines
-  const parsedLineIndices = new Set<number>();
+  // 2. Scan lines with multi-line item tracking
+  let pendingItemPrefix: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -362,34 +396,33 @@ export function parseReceipt(
 
     // Check for Grand Total line
     if (GRAND_TOTAL_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         detectedGrandTotalMinor = amounts[amounts.length - 1].amountMinor;
-        parsedLineIndices.add(i);
         continue;
       }
     }
 
     // Check for Subtotal line
     if (SUBTOTAL_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         detectedSubtotalMinor = amounts[amounts.length - 1].amountMinor;
-        parsedLineIndices.add(i);
         continue;
       }
     }
 
-    // Check for Tax lines (CGST, SGST, IGST, GST, VAT)
+    // Check for Tax lines (CGST, SGST, IGST, GST, VAT, S.Tax)
     if (TAX_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         const amt = amounts[amounts.length - 1].amountMinor;
-        // Check for rate percentage e.g. "9%" or "18%"
         const rateMatch = norm.match(/(\d{1,2}(?:\.\d{1,2})?)\s*%/);
         const ratePercent = rateMatch ? parseFloat(rateMatch[1]) : undefined;
 
-        // Clean tax label e.g. "CGST 9%" or "SGST" or "Tax"
         let taxName = norm.slice(0, amounts[amounts.length - 1].index).trim();
         if (!taxName) taxName = 'Tax';
 
@@ -399,47 +432,46 @@ export function parseReceipt(
           ratePercent,
           amountMinor: amt,
         });
-        parsedLineIndices.add(i);
         continue;
       }
     }
 
     // Check for Discount lines
     if (DISCOUNT_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         discountMinor += Math.abs(amounts[amounts.length - 1].amountMinor);
-        parsedLineIndices.add(i);
         continue;
       }
     }
 
     // Check for Service Charge lines
     if (SERVICE_CHARGE_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         serviceChargeMinor += amounts[amounts.length - 1].amountMinor;
-        parsedLineIndices.add(i);
         continue;
       }
     }
 
     // Check for Tip lines
     if (TIP_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         tipMinor += amounts[amounts.length - 1].amountMinor;
-        parsedLineIndices.add(i);
         continue;
       }
     }
 
     // Check for generic "Total" if Grand Total was not yet found
-    if (TOTAL_RE.test(norm) && !detectedGrandTotalMinor && !SUBTOTAL_RE.test(norm)) {
+    if (TOTAL_RE.test(norm) && !detectedGrandTotalMinor && !SUBTOTAL_RE.test(norm) && !TOTAL_QTY_RE.test(norm)) {
+      pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
         detectedGrandTotalMinor = amounts[amounts.length - 1].amountMinor;
-        parsedLineIndices.add(i);
         continue;
       }
     }
@@ -447,10 +479,29 @@ export function parseReceipt(
     // Try item candidate
     const item = parseItemCandidate(norm, detectedCurrency, rawLine.confidence);
     if (item) {
+      if (pendingItemPrefix) {
+        item.name = `${pendingItemPrefix} ${item.name}`;
+        pendingItemPrefix = null;
+      }
       items.push(item);
-      parsedLineIndices.add(i);
       continue;
     }
+
+    // If this line has NO candidate amounts, is not metadata, and not header row,
+    // it could be a multi-line item description prefix (e.g. "HYDERABADI MURG" before "BIRYANI 1 375.00")
+    if (
+      !isMetadataLine(norm) &&
+      !isHeaderRow(norm) &&
+      extractCandidateAmounts(norm, detectedCurrency).length === 0 &&
+      norm.length >= 3 &&
+      /[a-zA-Z]/.test(norm)
+    ) {
+      pendingItemPrefix = norm;
+      continue;
+    }
+
+    // Reset pending prefix
+    pendingItemPrefix = null;
 
     // If line has amounts but wasn't classified, keep as unassigned candidate
     if (!isMetadataLine(norm) && !isHeaderRow(norm) && extractCandidateAmounts(norm, detectedCurrency).length > 0) {
@@ -458,8 +509,8 @@ export function parseReceipt(
     }
   }
 
-  // 3. Extract Merchant Name from the top 5 non-metadata lines
-  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+  // 3. Extract Merchant Name from the top non-metadata lines
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
     const text = normalizeLine(lines[i].text);
     if (!text || text.length < 3) continue;
     if (isMetadataLine(text) || isHeaderRow(text)) continue;
@@ -488,13 +539,11 @@ export function parseReceipt(
   let isTotalConfirmed = false;
 
   if (detectedGrandTotalMinor !== undefined) {
-    // If detected total matches calculated within minor tolerance or exactly
-    if (detectedGrandTotalMinor === calculatedTotal || (items.length > 0 && Math.abs(detectedGrandTotalMinor - calculatedTotal) <= 2)) {
-      isTotalConfirmed = true;
-    }
+    totalMinor = detectedGrandTotalMinor;
+    isTotalConfirmed = true;
   } else if (items.length > 0 && calculatedTotal > 0) {
     totalMinor = calculatedTotal;
-    isTotalConfirmed = false; // user should confirm calculated total
+    isTotalConfirmed = false;
   }
 
   return {
