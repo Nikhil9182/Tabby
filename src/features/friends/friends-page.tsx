@@ -16,6 +16,7 @@ import {
   Check,
   Search,
   Mail,
+  Camera,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { useCollaboration } from '@/hooks/use-collaboration';
 import {
+  useAuth,
   useCurrentUser,
   useExpenses,
   useSettlements,
@@ -68,6 +70,7 @@ export function FriendsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedFriendId = routeParams.friendId || searchParams.get('friendId');
 
+  const { isGuest } = useAuth();
   const { user: currentUser } = useCurrentUser();
   const currentUserId = currentUser?.id || '';
   const ownEmail = (currentUser?.email || '').trim().toLowerCase();
@@ -255,13 +258,23 @@ export function FriendsPage() {
           </div>
 
           {/* Contextual Actions: Add Expense & Settle Up */}
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <Button
               onClick={() => navigate(`/expenses/new?friendId=${selectedFriend.id}`)}
               className="h-11 px-5 rounded-2xl bg-primary text-primary-foreground font-bold text-sm gap-2 shadow-xs"
             >
               <Plus className="h-4 w-4 stroke-[2.5]" />
               <span>Add expense</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/expenses/new?friendId=${selectedFriend.id}&scan=true`)}
+              className="h-11 px-4 rounded-2xl font-bold text-sm gap-2 border-primary/30 text-primary hover:bg-primary/5 shadow-xs"
+              title="Scan receipt to split"
+            >
+              <Camera className="h-4 w-4" />
+              <span>Scan receipt</span>
             </Button>
 
             {!selectedFriend.isSettled ? (
@@ -730,14 +743,14 @@ export function FriendsPage() {
             <form onSubmit={handleAddFriendSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="friend-email" className="text-xs font-semibold">
-                  Friend&apos;s Tabby Email Address
+                  {isGuest ? "Friend's Name or Email Address" : "Friend's Tabby Email Address"}
                 </Label>
                 <div className="relative">
                   <Mail className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="friend-email"
-                    type="email"
-                    placeholder="alex@gmail.com"
+                    type={isGuest ? "text" : "email"}
+                    placeholder={isGuest ? "e.g. Alex or alex@gmail.com" : "alex@gmail.com"}
                     value={friendEmailInput}
                     onChange={(e) => setFriendEmailInput(e.target.value)}
                     required
@@ -746,7 +759,9 @@ export function FriendsPage() {
                   />
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Adding a friend connects you directly. You can split bills 1-to-1 without creating a group.
+                  {isGuest
+                    ? "In Guest Mode, you can add friends by name and start splitting bills right away."
+                    : "Adding a friend connects you directly. You can split bills 1-to-1 without creating a group."}
                 </p>
               </div>
 

@@ -4,11 +4,13 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   type ReactNode,
 } from 'react';
 import type { AuthState, GoogleUser } from '@/domain/models/types';
 import { supabase, checkSupabaseConfig } from '@/lib/supabase';
 import { supabaseAuthService } from '@/services/auth/supabase-auth-service';
+import { guestStore } from '@/services/guest/guest-store';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 export type { AuthState, GoogleUser };
@@ -20,6 +22,9 @@ export interface AuthContextType {
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
+  isGuest: boolean;
+  continueAsGuest: () => void;
+  exitGuestMode: () => void;
   isLoading: boolean;
   error: string | null;
 }
@@ -59,6 +64,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [authState, setAuthState] = useState<AuthState>('connecting');
   const [user, setUser] = useState<(GoogleUser & { id: string; displayName?: string; avatarUrl?: string }) | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isGuest, setIsGuest] = useState<boolean>(() => guestStore.isGuestMode());
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,25 +150,61 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signOut = useCallback(async (): Promise<void> => {
     try {
-      await supabaseAuthService.signOut();
+      if (user) {
+        await supabaseAuthService.signOut();
+      }
       setUser(null);
       setAccessToken(null);
       setError(null);
       setAuthState('disconnected');
+      guestStore.setGuestMode(false);
+      setIsGuest(false);
     } catch (err) {
       console.error('Sign out error:', err);
     }
+  }, [user]);
+
+  const continueAsGuest = useCallback(() => {
+    guestStore.setGuestMode(true);
+    setIsGuest(true);
+  }, []);
+
+  const exitGuestMode = useCallback(() => {
+    guestStore.setGuestMode(false);
+    setIsGuest(false);
   }, []);
 
   const isAuthenticated = authState === 'connected' && !!user;
 
+  // Stable guest user representation when not logged in to Google
+  const activeUser = useMemo(() => {
+    if (user) return user;
+    if (isGuest) {
+      const guestId = guestStore.getGuestUserId();
+      const name = guestStore.getGuestUserName();
+      return {
+        id: guestId,
+        sub: guestId,
+        name,
+        displayName: name,
+        email: '',
+        picture: undefined,
+        avatarUrl: undefined,
+      };
+    }
+    return null;
+  }, [user, isGuest]);
+
   const value: AuthContextType = {
     authState,
-    user,
+    user: activeUser,
     accessToken,
     signIn,
     signOut,
     isAuthenticated,
+    isGuest: !isAuthenticated && isGuest,
+    continueAsGuest,
+    exitGuestMode,
     isLoading,
     error,
   };

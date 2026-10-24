@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
 import type { SplitType } from '@/domain/models/types';
 import { friendService } from './friend-service';
+import { guestStore } from '@/services/guest/guest-store';
 
 export type DbGroupExpense = Database['public']['Tables']['group_expenses']['Row'];
 export type DbPersonalExpense = Database['public']['Tables']['personal_expenses']['Row'];
@@ -121,6 +122,10 @@ class ExpenseService {
    * Fetches expenses based on filters
    */
   async getExpenses(filters?: ExpenseFilters): Promise<UnifiedExpense[]> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getExpenses(filters);
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
@@ -273,6 +278,10 @@ class ExpenseService {
    * Fetches splits for one or more expenses
    */
   async getSplitsForExpenses(expenseIds: string[]): Promise<Record<string, DbExpenseSplit[]>> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getSplitsForExpenses(expenseIds);
+    }
+
     if (!expenseIds || expenseIds.length === 0) return {};
 
     const { data: splits, error } = await (supabase
@@ -297,10 +306,14 @@ class ExpenseService {
   }
 
   /**
-   * Creates an expense atomically with splits in Supabase
+   * Creates an expense atomically with splits in Supabase (or guest storage)
    * Supports: Direct Friend Expense, Group Expense, Personal Expense
    */
   async createExpense(input: CreateExpenseServiceInput): Promise<{ id: string; description: string }> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.createExpense(input);
+    }
+
     const isDirect = input.contextType === 'direct' || input.sourceType === 'direct' || (!input.groupId && !!input.friendId);
     const isGroup = (input.contextType === 'group' || input.sourceType === 'group' || !!input.groupId) && !isDirect;
 
@@ -469,6 +482,10 @@ class ExpenseService {
    * Deletes an expense
    */
   async deleteExpense(id: string): Promise<void> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.deleteExpense(id);
+    }
+
     const { error: groupError } = await (supabase.from('group_expenses') as any)
       .delete()
       .eq('id', id);

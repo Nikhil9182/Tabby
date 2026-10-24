@@ -14,6 +14,7 @@ import {
   Coffee,
   Users,
   UserCheck,
+  Camera,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
@@ -154,15 +155,26 @@ export function ExpensesPage() {
           { label: "Dashboard", href: "/dashboard" },
           { label: "Expenses" },
         ]}
-        action={
-          <Button
-            asChild
-            className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
-          >
-            <Link to="/expenses/new">
-              <Plus className="h-4 w-4 stroke-[2.5]" /> Add Expense
-            </Link>
-          </Button>
+        actions={
+          <div className="flex items-center gap-2.5">
+            <Button
+              asChild
+              variant="outline"
+              className="h-11 px-4 rounded-2xl font-bold gap-2 border-primary/30 text-primary hover:bg-primary/5 shadow-2xs"
+            >
+              <Link to="/expenses/new?scan=true">
+                <Camera className="h-4 w-4" /> Scan Receipt
+              </Link>
+            </Button>
+            <Button
+              asChild
+              className="h-11 px-5 rounded-2xl bg-[#0055FF] hover:bg-[#0055FF]/90 text-white font-bold gap-2 shadow-sm transition-transform active:scale-98"
+            >
+              <Link to="/expenses/new">
+                <Plus className="h-4 w-4 stroke-[2.5]" /> Add Expense
+              </Link>
+            </Button>
+          </div>
         }
       />
 

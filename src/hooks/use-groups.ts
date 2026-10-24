@@ -102,7 +102,9 @@ export function useGroups() {
         description: input.description,
         currency: input.currency || 'USD',
         imageUrl: input.imageUrl,
-      });
+        createdBy: input.createdBy,
+        members: input.members,
+      } as any);
 
       return mapDbGroupToGroup(dbGroup);
     },

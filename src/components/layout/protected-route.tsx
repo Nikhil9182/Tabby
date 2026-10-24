@@ -3,13 +3,13 @@ import { useAuth } from '@/hooks/use-auth';
 import { PageSkeleton } from './loading-skeleton';
 
 export function ProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isGuest, isLoading } = useAuth();
 
   if (isLoading) {
     return <PageSkeleton />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isGuest) {
     return <Navigate to="/welcome" replace />;
   }
 

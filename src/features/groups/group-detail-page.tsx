@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
+  Camera,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -322,6 +323,14 @@ export function GroupDetailPage() {
           >
             <ArrowRightLeft className="h-4 w-4" />
             <span>Settle up</span>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/expenses/new?groupId=${group.id}&scan=true`)}
+            className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 font-semibold"
+          >
+            <Camera className="h-4 w-4" />
+            <span>Scan receipt</span>
           </Button>
           <Button
             onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}

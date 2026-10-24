@@ -28,7 +28,7 @@ export interface SyncIndicatorProps {
 export function SyncIndicator({ compact = false, className }: SyncIndicatorProps) {
   const syncStatus = useSyncStatus();
   const { triggerSync, isSyncing } = useSync();
-  const { authState, signIn } = useAuth();
+  const { authState, signIn, isGuest } = useAuth();
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const handleManualSync = async () => {
@@ -63,6 +63,11 @@ export function SyncIndicator({ compact = false, className }: SyncIndicatorProps
     textColor = "text-red-700 dark:text-red-400";
     statusLabel = "Connection Error";
     Icon = AlertCircle;
+  } else if (isGuest) {
+    dotColor = "bg-amber-500";
+    textColor = "text-amber-700 dark:text-amber-400";
+    statusLabel = "Guest Mode (Local)";
+    Icon = Database;
   } else if (syncStatus.authState === "disconnected") {
     dotColor = "bg-muted-foreground";
     textColor = "text-muted-foreground";

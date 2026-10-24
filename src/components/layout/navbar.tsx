@@ -71,7 +71,7 @@ export function TabbyLogo({ className }: { className?: string }) {
 export function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user: authUser, isAuthenticated, signOut } = useAuth();
+  const { user: authUser, isAuthenticated, isGuest, signOut, signIn } = useAuth();
   const { user: currentUser } = useCurrentUser();
   const { isOnline, isSyncing, pendingCount } = useSync();
   const { theme, setTheme } = useTheme();
@@ -209,10 +209,13 @@ export function Navbar() {
             {/* Non-clickable Sync Status Pill (Display only - no glitching) */}
             <div
               className="hidden sm:inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full select-none bg-muted/30 border border-border/40"
-              title="Cloud synchronization status"
+              title={!isAuthenticated || isGuest ? "Guest Mode: Stored only on this device" : "Cloud synchronization status"}
             >
-              {!isAuthenticated ? (
-                <span className="text-muted-foreground">Stored on this device</span>
+              {!isAuthenticated || isGuest ? (
+                <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Stored only on this device
+                </span>
               ) : !isOnline ? (
                 <>
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
@@ -368,9 +371,9 @@ export function Navbar() {
               <DropdownMenuContent align="end" className="w-56 shadow-xl">
                 <DropdownMenuLabel className="font-normal px-2 py-1.5">
                   <div className="flex flex-col space-y-0.5">
-                    <p className="text-sm font-bold text-foreground leading-none">{displayName}</p>
+                    <p className="text-sm font-bold text-foreground leading-none">{isGuest ? "Guest User" : displayName}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {currentUser?.email || authUser?.email || "Local offline user"}
+                      {isGuest ? "Stored only on this device" : (currentUser?.email || authUser?.email || "Signed in")}
                     </p>
                   </div>
                 </DropdownMenuLabel>
@@ -427,13 +430,24 @@ export function Navbar() {
                     <span>Disconnect Google</span>
                   </DropdownMenuItem>
                 ) : (
-                  <DropdownMenuItem
-                    onClick={() => navigate("/welcome")}
-                    className="rounded-lg cursor-pointer gap-2 text-primary font-semibold"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    <span>Connect Google Cloud</span>
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => void signIn()}
+                      className="rounded-lg cursor-pointer gap-2 text-primary font-semibold"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      <span>Connect Google Cloud</span>
+                    </DropdownMenuItem>
+                    {isGuest && (
+                      <DropdownMenuItem
+                        onClick={() => signOut()}
+                        className="rounded-lg cursor-pointer gap-2 text-rose-600 dark:text-rose-400"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        <span>Exit Guest Mode</span>
+                      </DropdownMenuItem>
+                    )}
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

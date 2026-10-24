@@ -37,7 +37,7 @@ export function SettingsPage() {
   const { user, updateProfile, isUpdating } = useCurrentUser();
   const { defaultCurrency, setDefaultCurrency, isSavingDefaultCurrency } = useCurrency();
   const { theme, setTheme } = useTheme();
-  const { user: authUser, signIn, signOut, isAuthenticated } = useAuth();
+  const { user: authUser, signIn, signOut, isAuthenticated, isGuest } = useAuth();
   const { syncStatus, triggerSync, isSyncing } = useSync();
   const { expenses } = useExpenses();
   const { groups } = useGroups();
@@ -278,15 +278,17 @@ export function SettingsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-sm">Google account</span>
                 <Badge
-                  variant={isAuthenticated ? 'default' : 'outline'}
+                  variant={isAuthenticated ? 'default' : isGuest ? 'secondary' : 'outline'}
                   className="text-[10px] capitalize"
                 >
-                  {isAuthenticated ? 'Signed In' : 'Signed Out'}
+                  {isAuthenticated ? 'Signed In' : isGuest ? 'Guest Mode' : 'Signed Out'}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground break-words">
                 {isAuthenticated
                   ? `Signed in as ${authUser?.email || displayEmail}`
+                  : isGuest
+                  ? 'Stored locally on this device. Sign in with Google to sync across devices.'
                   : 'Sign in to see your expenses and balances.'}
               </p>
             </div>

@@ -41,20 +41,20 @@ function mapProfileToUser(profile: DbProfile | null, authUser: any): User | null
 
 export function useCurrentUser(): UseCurrentUserResult {
   const queryClient = useQueryClient();
-  const { user: authUser, isAuthenticated } = useAuth();
+  const { user: authUser, isAuthenticated, isGuest } = useAuth();
 
   const {
     data: user = null,
     isLoading,
     error,
   } = useQuery<User | null, Error>({
-    queryKey: ['current-user', authUser?.id],
+    queryKey: ['current-user', authUser?.id, isGuest],
     queryFn: async () => {
-      if (!isAuthenticated || !authUser?.id) return null;
+      if (!isAuthenticated && !isGuest) return null;
       const profile = await profileService.getCurrentProfile();
       return mapProfileToUser(profile, authUser);
     },
-    enabled: !!authUser?.id,
+    enabled: !!authUser?.id || isGuest,
   });
 
   const updateProfileMutation = useMutation({

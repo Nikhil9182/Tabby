@@ -42,6 +42,7 @@ export function useFriends(): UseFriendsResult {
       void queryClient.invalidateQueries({ queryKey: ['friends'] });
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['settlements'] });
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
     },
   });
 

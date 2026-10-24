@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
-import type { Friendship, FriendSummary } from '@/domain/models/types';
+import type { Friendship } from '@/domain/models/types';
 import type { DbProfile } from './profile-service';
+import { guestStore } from '@/services/guest/guest-store';
 
 export interface AddFriendResult {
   friendship: Friendship;
@@ -21,6 +22,10 @@ export class FriendService {
    * Fetches all accepted friends for the current user
    */
   async getFriends(userId: string): Promise<DbFriendProfile[]> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getFriends();
+    }
+
     // Query friendships involving this user
     const { data: friendships, error: friendError } = await (supabase
       .from('friendships') as any)
@@ -70,11 +75,15 @@ export class FriendService {
   }
 
   /**
-   * Adds a friend by email.
+   * Adds a friend by email (or name in guest mode).
    * If the user already exists in profiles, creates an accepted friendship immediately.
    * Does NOT create a group.
    */
   async addFriendByEmail(email: string): Promise<AddFriendResult> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.addFriend(email);
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -141,6 +150,10 @@ export class FriendService {
    * Resolves or creates a canonical friendship between two users
    */
   async getOrCreateFriendship(userA: string, userB: string): Promise<string> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getOrCreateFriendship(userA, userB);
+    }
+
     if (userA === userB) throw new Error('Cannot create friendship with oneself');
     const u1 = userA < userB ? userA : userB;
     const u2 = userA < userB ? userB : userA;

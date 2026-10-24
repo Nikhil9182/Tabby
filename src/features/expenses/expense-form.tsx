@@ -17,7 +17,10 @@ import {
   Divide,
   Percent,
   PieChart,
+  Camera,
+  Sparkles,
 } from 'lucide-react';
+import { ReceiptScannerDialog } from '@/components/receipts/receipt-scanner-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -120,6 +123,9 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
   // shares input numbers per user (e.g. 1, 2)
   const [shares, setShares] = useState<Record<string, number>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const queryScan = searchParams.get('scan') === 'true' || searchParams.get('scan') === '1';
+  const [isScannerOpen, setIsScannerOpen] = useState(queryScan);
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -753,9 +759,48 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             : 'Record a new personal or group split expense.'
         }
         onBack={() => navigate(-1)}
+        action={
+          !isEditing && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsScannerOpen(true)}
+              className="gap-2 border-primary/30 text-primary hover:bg-primary/5 shadow-2xs font-semibold"
+            >
+              <Camera className="h-4 w-4" />
+              <span>Scan Receipt</span>
+            </Button>
+          )
+        }
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {/* Quick Scan Receipt Banner */}
+        {!isEditing && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-primary/30 bg-primary/5 text-xs shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground text-xs sm:text-sm">Have a paper or digital receipt?</p>
+                <p className="text-muted-foreground text-[11px] sm:text-xs">
+                  Scan receipt photo to automatically extract itemized lines, taxes, and split the bill.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="xs"
+              onClick={() => setIsScannerOpen(true)}
+              className="shrink-0 gap-1.5 font-semibold self-start sm:self-auto h-8 px-3"
+            >
+              <Camera className="h-3.5 w-3.5" />
+              <span>Scan Receipt</span>
+            </Button>
+          </div>
+        )}
         {/* Core Details Card */}
         <Card className="border-border/60 shadow-xs">
           <CardHeader className="p-5 pb-3">
@@ -1275,6 +1320,23 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           </Button>
         </div>
       </form>
+
+      {/* Receipt Scanner Modal */}
+      {!isEditing && (
+        <ReceiptScannerDialog
+          isOpen={isScannerOpen}
+          onClose={() => setIsScannerOpen(false)}
+          contextType={trackingMode}
+          friendId={selectedFriendId}
+          groupId={selectedGroupId}
+          defaultCurrency={defaultCurrency}
+          contextCurrency={contextCurrency}
+          participants={availableMembers}
+          currentUserId={currentUserId}
+          paidBy={watch('paidBy') || currentUserId}
+          categoryId={watch('categoryId')}
+        />
+      )}
     </div>
   );
 }

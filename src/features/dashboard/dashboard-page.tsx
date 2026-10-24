@@ -16,9 +16,12 @@ import {
   Coffee,
   FolderPlus,
   UserCheck,
+  Sparkles,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/use-auth";
 import { useExpenses } from "@/hooks/use-expenses";
 import { useGroups } from "@/hooks/use-groups";
 import { useSettlements } from "@/hooks/use-settlements";
@@ -36,6 +39,7 @@ import { cn } from "@/lib/utils";
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { isGuest, signIn } = useAuth();
   const { user: currentUser } = useCurrentUser();
   const currentUserId = currentUser?.id || "current_user";
 
@@ -238,6 +242,31 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-in fade-in-50 duration-300 pb-16">
+      {/* Guest Mode Indicator Banner */}
+      {isGuest && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold">You are using Tabby in Guest Mode</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Your data is stored only on this device. Sign in anytime to sync across all your devices.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => void signIn()}
+            className="rounded-xl font-bold bg-[#0055FF] text-white hover:bg-[#0055FF]/90 shrink-0 text-xs gap-1.5 h-9 px-4 cursor-pointer"
+          >
+            <span>Sign in with Google</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       {/* 1. HERO HEADER WITH QUICK ACTIONS */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1 sm:pt-2">
         <div>
@@ -257,6 +286,15 @@ export function DashboardPage() {
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
             <span>Add expense</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => navigate("/expenses/new?scan=true")}
+            className="h-10 sm:h-11 px-4 rounded-2xl font-bold text-sm gap-1.5 border-primary/30 text-primary hover:bg-primary/5 shadow-2xs"
+          >
+            <Camera className="h-4 w-4" />
+            <span>Scan receipt</span>
           </Button>
 
           <Button

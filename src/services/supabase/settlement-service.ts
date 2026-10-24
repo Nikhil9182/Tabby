@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
 import type { Settlement } from '@/domain/models/types';
 import { friendService } from './friend-service';
+import { guestStore } from '@/services/guest/guest-store';
 
 export type DbSettlement = Database['public']['Tables']['settlements']['Row'] & {
   applied_currency?: string | null;
@@ -77,6 +78,10 @@ class SettlementService {
    * Fetches settlements with optional group, friend, or context filter
    */
   async getSettlements(groupId?: string, contextType?: 'direct' | 'group'): Promise<DbSettlement[]> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getSettlements(groupId, contextType);
+    }
+
     let query = (supabase.from('settlements') as any)
       .select('*')
       .is('deleted_at', null)
@@ -103,6 +108,10 @@ class SettlementService {
    * Records a new settlement in Supabase (direct friend or group)
    */
   async createSettlement(input: CreateSettlementInput): Promise<DbSettlement> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.createSettlement(input);
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -218,6 +227,10 @@ class SettlementService {
    * Deletes a settlement
    */
   async deleteSettlement(id: string): Promise<void> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.deleteSettlement(id);
+    }
+
     const { error } = await (supabase.from('settlements') as any)
       .delete()
       .eq('id', id);

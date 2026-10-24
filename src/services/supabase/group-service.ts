@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
+import { guestStore } from '@/services/guest/guest-store';
 
 export type DbGroup = Database['public']['Tables']['groups']['Row'];
 export type DbGroupMember = Database['public']['Tables']['group_members']['Row'];
@@ -41,6 +42,10 @@ class GroupService {
    * Fetches all active groups that the current user belongs to
    */
   async getUserGroups(): Promise<DbGroup[]> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getUserGroups();
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
@@ -79,6 +84,10 @@ class GroupService {
    * Fetches full group details including member profiles
    */
   async getGroupById(groupId: string): Promise<GroupWithMembers | null> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getGroupById(groupId);
+    }
+
     const { data: group, error: groupError } = await (supabase
       .from('groups') as any)
       .select('*')
@@ -138,7 +147,11 @@ class GroupService {
   /**
    * Creates a new group atomically with creator as owner via RPC
    */
-  async createGroup(input: CreateGroupInput): Promise<DbGroup> {
+  async createGroup(input: CreateGroupInput & { createdBy?: string; members?: Array<{ userId: string; role?: 'owner' | 'admin' | 'member' }> }): Promise<DbGroup> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.createGroup(input);
+    }
+
     const { data, error } = await (supabase.rpc as any)('create_group_with_owner', {
       p_name: input.name.trim(),
       p_description: input.description?.trim() || null,
@@ -158,6 +171,10 @@ class GroupService {
    * Updates group settings
    */
   async updateGroup(input: UpdateGroupInput): Promise<DbGroup> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.updateGroup(input);
+    }
+
     const updates: any = {
       updated_at: new Date().toISOString(),
     };
@@ -185,6 +202,10 @@ class GroupService {
    * Soft-archives a group
    */
   async archiveGroup(groupId: string): Promise<void> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.archiveGroup(groupId);
+    }
+
     const { error } = await (supabase
       .from('groups') as any)
       .update({ archived_at: new Date().toISOString() })
@@ -243,6 +264,10 @@ class GroupService {
    * Removes a member from group (or user leaves group)
    */
   async removeMember(groupId: string, userId: string): Promise<void> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.removeMember(groupId, userId);
+    }
+
     const { error } = await (supabase
       .from('group_members') as any)
       .delete()

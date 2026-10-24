@@ -1,13 +1,18 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/lib/supabase-types';
+import { guestStore } from '@/services/guest/guest-store';
 
 export type DbProfile = Database['public']['Tables']['profiles']['Row'];
 
 class ProfileService {
   /**
-   * Fetches the current user profile from public.profiles
+   * Fetches the current user profile from public.profiles (or guest storage)
    */
   async getCurrentProfile(): Promise<DbProfile | null> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getCurrentProfile();
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -66,6 +71,10 @@ class ProfileService {
    * Updates current user's profile
    */
   async updateCurrentProfile(updates: { displayName?: string; avatarUrl?: string }): Promise<DbProfile> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.updateCurrentProfile(updates);
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -93,6 +102,10 @@ class ProfileService {
    * Fetches multiple profiles by ID list
    */
   async getProfiles(ids: string[]): Promise<Record<string, DbProfile>> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getProfiles(ids);
+    }
+
     if (ids.length === 0) return {};
 
     const uniqueIds = Array.from(new Set(ids));
@@ -118,6 +131,10 @@ class ProfileService {
    * Returns null (not an error) before the multi-currency migration has run.
    */
   async getPreferredCurrency(): Promise<string | null> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getPreferredCurrency();
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -136,6 +153,10 @@ class ProfileService {
 
   /** Saves the display-currency preference. Never touches any expense. */
   async setPreferredCurrency(currency: string): Promise<void> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.setPreferredCurrency(currency);
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -152,6 +173,10 @@ class ProfileService {
    * yourself, your friends and people you share a group with.
    */
   async getVisibleProfiles(): Promise<Record<string, DbProfile>> {
+    if (guestStore.isGuestMode()) {
+      return guestStore.getVisibleProfiles();
+    }
+
     const { data, error } = await (supabase
       .from('profiles') as any)
       .select('*')
