@@ -13,6 +13,7 @@ client_secret*.json
 
 # Testing and coverage
 coverage/
+.tmp/
 
 # Logs
 logs/

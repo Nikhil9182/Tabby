@@ -6,37 +6,70 @@
 
 **Split bills with friends, minus the awkward maths.**
 
-A Splitwise-style expense tracker for friends, flatmates and trips, with real multi-currency support.<br />
-Built with React 19, TypeScript and Supabase. Fork it and make it your own.
+A Splitwise-style expense tracker for friends, flatmates and trips, with real multi-currency support and on-device receipt scanning.<br />
+Built with React 19, TypeScript, Tailwind CSS 4, and Supabase. Fork it and make it your own.
 
-[**Live demo**](https://nikhil9182.github.io/Tabby/) · [Features](#-features) · [Quick start](#-quick-start) · [How it works](#-how-it-works) · [Use it as a base](#-use-tabby-as-a-base)
+[**Live Demo**](https://nikhil9182.github.io/Tabby/) · [Features](#-features) · [Screenshots](#-screenshots) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Architecture](#-architecture)
 
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres_·_Auth_·_Realtime-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
-[![Tested with Vitest](https://img.shields.io/badge/tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Tested with Vitest](https://img.shields.io/badge/tested_with-Vitest_295_tests-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+
+<br />
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Tabby Dashboard" width="92%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);" />
+</p>
 
 </div>
-
-<!--
-  Screenshots: drop images in docs/screenshots/ and uncomment this block.
-  <p align="center">
-    <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="49%" />
-    <img src="docs/screenshots/friend.png" alt="Friend balance" width="49%" />
-  </p>
--->
 
 ---
 
 ## 💡 Why Tabby?
 
-Splitting costs sounds simple until someone pays in dollars, someone else in rupees, and three people settle up a week later. Tabby keeps a running tab of **who owes whom**, and keeps the numbers right:
+Splitting costs sounds simple until someone pays in dollars, someone else in rupees, three people settle up a week later, and no one wants to type in a 15-item restaurant bill. Tabby keeps a running tab of **who owes whom**, and keeps the numbers mathematically correct:
 
-- **No rounding drift.** Money is stored as whole cents (or paise, or yen), and splits always add up to the exact total.
-- **No currency mix-ups.** A $50 debt stays a $50 debt. Totals are converted for display, never added together raw.
-- **No data leaks.** Postgres row-level security means you only ever see expenses you're part of.
+- **📸 Instant receipt scanning.** Snap a photo of any receipt. Tabby detects items, quantities, taxes, tips, and discounts locally in your browser.
+- **💰 No rounding drift.** Money is stored strictly as integer cents (or paise, or yen), and splits always add up to the exact total down to the single penny.
+- **🌐 No currency mix-ups.** A $50 debt stays a $50 debt. Totals are converted for display using live rates, never added together raw.
+- **⚡ Guest mode included.** Try the full app immediately without signing in. Data lives in local browser storage (IndexedDB) and merges into your cloud account when you sign in.
+- **🛡️ Private by design.** Postgres row-level security ensures you only ever see expenses you're directly part of.
+
+---
+
+## 📸 Screenshots
+
+<div align="center">
+
+### Receipt Scanning & Smart Bill Splitting
+*Extract restaurant receipts client-side with Tesseract.js OCR and assign individual dishes to friends.*
+
+<p align="center">
+  <img src="docs/screenshots/receipt-scanner.png" alt="Receipt Scanner" width="85%" style="border-radius: 10px;" />
+</p>
+
+<br />
+
+### Mobile-Ready & Visual Analytics
+*Seamless responsiveness on phone and desktop, plus detailed breakdown of monthly spending trends.*
+
+| 📱 Mobile-First Experience | 📊 Spending Reports & Analytics |
+| :---: | :---: |
+| <img src="docs/screenshots/mobile-dashboard.png" alt="Mobile Dashboard" width="280px" style="border-radius: 12px;" /> | <img src="docs/screenshots/reports.png" alt="Reports Page" width="520px" style="border-radius: 8px;" /> |
+
+<br />
+
+### Instant Onboarding
+*Jump straight in with Guest Mode or sign in with Google OAuth.*
+
+<p align="center">
+  <img src="docs/screenshots/welcome.png" alt="Welcome Onboarding" width="80%" style="border-radius: 8px;" />
+</p>
+
+</div>
 
 ---
 
@@ -44,20 +77,22 @@ Splitting costs sounds simple until someone pays in dollars, someone else in rup
 
 | | |
 | :--- | :--- |
-| 👥 **Friends and groups** | Keep a running tab with one friend, or create a group for a trip or a flat. The two never mix. |
-| 🧮 **Four ways to split** | Equally, by exact amounts, by percentage, or by shares. Leftover cents are shared out fairly. |
-| 🤝 **Settle up** | Record payments, see balances update instantly, and follow suggested payments that need the fewest transfers. |
-| 🌍 **Any currency** | Add expenses in any currency and see totals in yours at real exchange rates. Pay in rupees against a dollar debt, and the rate is saved with the payment. |
-| 📊 **Reports** | Monthly trends, category breakdown, and personal / friends / groups split, with CSV export. |
-| ⚡ **Live updates** | Expenses and payments appear on everyone's screen without a refresh. |
-| 📱 **Works everywhere** | Responsive on phone and desktop, installable as an app, light and dark themes. |
-| 🔐 **Private by design** | Google sign-in, and database rules that only show you your own data. |
+| 📸 **Receipt OCR scanner** | Take a photo or upload a receipt. Client-side OCR detects store name, item lines, GST/VAT taxes, tips, and discounts with automatic discrepancy safeguards. |
+| 🧮 **Smart bill splitting** | Split bills equally, by exact amounts, by percentage, by shares, or assign individual receipt dishes to specific friends with proportional tax allocation. |
+| 👤 **Guest mode** | Test and use Tabby with zero signup. Data persists in browser IndexedDB and smoothly merges with your account when you sign in with Google. |
+| 👥 **Friends and groups** | Keep a continuous tab with one friend, or create groups for road trips, flatmates, or holidays. The balances never cross-contaminate. |
+| 🤝 **Simplified debt settlement** | Record payments, see balances update instantly, and follow smart suggestions using a greedy cash-flow algorithm that requires the fewest transfers. |
+| 🌍 **True multi-currency** | Add expenses in any currency and see balances converted at real-time exchange rates. Settle a USD debt in INR with rate snapshots locked at payment time. |
+| 📊 **Reports & CSV export** | Monthly trends, category breakdowns, and friend/group split distributions with one-click CSV export. |
+| ⚡ **Realtime sync** | Multi-device sync powered by Supabase Realtime—new expenses and settlements appear instantly without page reloads. |
+| 📱 **Installable PWA** | Works offline and installs as a progressive web app on iOS, Android, macOS, and Windows. |
+| 🔐 **Row-level security** | Enforced at the Postgres database layer. No user can read, insert, or alter an expense they are not an explicit participant of. |
 
 ---
 
-## 🚀 Quick start
+## 🚀 Quick Start
 
-You'll need **Node.js 20+**, a free [Supabase](https://supabase.com) project, and a [Google Cloud](https://console.cloud.google.com) project for sign-in. It takes about 10 minutes.
+You'll need **Node.js 20+**, a free [Supabase](https://supabase.com) project, and a [Google Cloud](https://console.cloud.google.com) project for OAuth sign-in. It takes about 10 minutes.
 
 ### 1. Clone and install
 
@@ -67,33 +102,33 @@ cd Tabby
 npm install
 ```
 
-### 2. Create the database
+### 2. Set up the database
 
-In your Supabase project, open **SQL Editor** and run each file in [`supabase/migrations/`](supabase/migrations) **in order**:
+In your Supabase project, open the **SQL Editor** and run each migration in [`supabase/migrations/`](supabase/migrations) **in numerical order**:
 
-| # | File | What it adds |
+| # | Migration File | Description |
 | :-: | :--- | :--- |
-| 1 | `20261022000001_initial_schema.sql` | Tables, the new-user profile trigger, default categories |
-| 2 | `20261022000002_row_level_security.sql` | Row-level security on every table |
-| 3 | `20261022000003_rpc_functions.sql` | Atomic functions for groups, expenses and invitations |
-| 4 | `20261022000004_splitwise_direct_expenses.sql` | Friendships and one-to-one expenses |
-| 5 | `20261023000001_friend_profile_lookup.sql` | Adding friends by email |
-| 6 | `20261023000002_direct_expense_rls.sql` | Access rules for friend expenses |
-| 7 | `20261023000003_multi_currency.sql` | Display currency and cross-currency settlements |
-| 8 | `20261023000004_schema_cleanup.sql` | Index and policy cleanup (safe to re-run) |
+| 1 | `20261022000001_initial_schema.sql` | Core schema, user profile trigger, default categories |
+| 2 | `20261022000002_row_level_security.sql` | Postgres Row-Level Security policies on all tables |
+| 3 | `20261022000003_rpc_functions.sql` | Atomic RPC functions for groups and expense creation |
+| 4 | `20261022000004_splitwise_direct_expenses.sql` | Friendships and one-to-one direct balances |
+| 5 | `20261023000001_friend_profile_lookup.sql` | Secure profile lookup for adding friends by email |
+| 6 | `20261023000002_direct_expense_rls.sql` | Direct expense access controls |
+| 7 | `20261023000003_multi_currency.sql` | Multi-currency storage, preference and settlement rate locking |
+| 8 | `20261023000004_schema_cleanup.sql` | Index optimization and policy cleanup |
 
-> Using the Supabase CLI instead? Run `supabase link` and then `supabase db push`.
+> 💡 **Using the Supabase CLI?** Simply run `supabase link` followed by `supabase db push`.
 
-### 3. Turn on Google sign-in
+### 3. Configure Google OAuth
 
-1. **Google Cloud Console → APIs & Services → Credentials:** create an **OAuth client ID** (Web application).
-2. Add Supabase's callback URL as an **authorized redirect URI**. You'll find it under **Supabase → Authentication → Providers → Google**, and it looks like `https://<project-ref>.supabase.co/auth/v1/callback`.
-3. Back in Supabase, enable the **Google** provider and paste in the client ID and secret.
-4. In **Supabase → Authentication → URL Configuration**, add your app's URLs as redirect URLs:
-   - `http://localhost:5173/**`
-   - `https://<your-username>.github.io/<repo>/**` (for production)
+1. Go to **Google Cloud Console → APIs & Services → Credentials** and create an **OAuth Client ID** (Web Application).
+2. Add Supabase's redirect URI (from **Supabase → Authentication → Providers → Google**, e.g., `https://<project-ref>.supabase.co/auth/v1/callback`) to **Authorized redirect URIs**.
+3. In Supabase, enable **Google** provider and enter your Client ID and Client Secret.
+4. Under **Supabase → Authentication → URL Configuration**, add redirect URLs:
+   - `http://localhost:5173/**` (development)
+   - `https://<your-username>.github.io/<repo>/**` (production)
 
-### 4. Add your keys
+### 4. Configure environment variables
 
 ```bash
 cp .env.example .env
@@ -101,140 +136,92 @@ cp .env.example .env
 
 ```env
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
 ```
 
-Both are under **Supabase → Project Settings → API**. Only use the public **publishable / anon** key; never the `service_role` key.
-
-### 5. Run it
+### 5. Launch the development server
 
 ```bash
 npm run dev
 ```
 
-Open <http://localhost:5173> and sign in with Google. To confirm the database is set up, run `npm run db:inspect`.
+Open <http://localhost:5173> and click **Continue as Guest** or sign in with Google. Run `npm run db:inspect` anytime to verify your database connectivity.
 
 ---
 
-## 🧠 How it works
+## 🧠 How It Works
 
 ```mermaid
 flowchart LR
-  subgraph Browser["Browser · React 19 SPA"]
-    UI["Pages & components"] --> Hooks["Hooks<br/>(TanStack Query)"]
-    Hooks --> Domain["Domain layer<br/>splits · balances · money"]
-    Hooks --> Services["Services"]
+  subgraph Client["Browser · React 19 SPA"]
+    UI["Pages & Components<br/>(Tailwind 4 + shadcn)"] --> Hooks["TanStack Query Hooks"]
+    OCR["Tesseract.js OCR<br/>(Client-Side Worker)"] --> UI
+    Hooks --> Domain["Domain Layer<br/>money · splits · balance engine"]
+    Hooks --> Services["Services Layer"]
+    GuestStore["IndexedDB Guest Store"] <--> Hooks
   end
 
-  Services -->|Google sign-in| Auth[(Supabase Auth)]
-  Services -->|queries and atomic RPCs| DB[(Postgres<br/>row-level security)]
-  DB -->|live changes| Realtime[(Supabase Realtime)]
+  Services -->|OAuth Sign-in| Auth[(Supabase Auth)]
+  Services -->|Atomic RPCs & Queries| DB[(PostgreSQL + RLS)]
+  DB -->|Live Change Subscriptions| Realtime[(Supabase Realtime)]
   Realtime --> Hooks
-  Services -->|exchange rates| FX[Frankfurter API]
+  Services -->|Daily ECB FX Rates| FX[Frankfurter API]
 ```
 
-### Engineering highlights
+### 🔬 Engineering Highlights
 
-- **💰 Exact money maths.** Every amount is an integer in the currency's smallest unit, with per-currency precision (yen has 0 decimals, dinar has 3). Split remainders are handed out one unit at a time, so shares always add up to the total ([`src/domain/money`](src/domain/money), [`src/domain/splits`](src/domain/splits)).
-- **🌐 A ledger per currency.** Balances are kept as one total per currency and are never summed across currencies. Balances shown on screen convert at the latest rate. Reports convert at each expense's own date. Cross-currency payments save their rate, so past balances never shift ([policy](ARCHITECTURE.md#81-conversion-policy)).
-- **🧭 Fewer transfers.** A greedy minimum-cash-flow algorithm cuts a group's web of debts to the fewest payments, separately in each currency ([`balance-engine.ts`](src/domain/balances/balance-engine.ts)).
-- **🛡️ Security in the database.** Postgres row-level security decides who can see each expense, split and payment, using `SECURITY DEFINER` helpers to avoid recursive policy checks. Friend and group data are isolated by policy, not just by the UI.
-- **⚛️ Atomic writes.** An expense and its splits are saved in one database function call, so a half-saved expense can't exist.
-- **🧪 Tested.** 250+ Vitest tests cover splits, balances, multi-currency rounding, rate-service failures, settlement snapshots, and components.
-
-Want the deep dive? See [ARCHITECTURE.md](ARCHITECTURE.md).
+- **💰 Integer Minor Unit Math:** Every monetary calculation is strictly integer-based (cents, paise, yen). Fractions and remainders are allocated deterministically using largest-remainder distribution, ensuring zero-drift splits ([`src/domain/money`](src/domain/money), [`src/domain/splits`](src/domain/splits)).
+- **📸 Local Browser OCR:** Receipt scanning runs 100% on-device via web workers with Tesseract.js. No receipt images are uploaded to external cloud AI APIs, preserving user privacy.
+- **🌐 Dual-Ledger Currency Policy:** Balances are tracked per currency independently. Cross-currency debts snapshot exchange rates at the moment of payment to protect historical records from fluctuating exchange rates ([policy doc](ARCHITECTURE.md#81-conversion-policy)).
+- **🧭 Greedy Debt Simplification:** Reduces a tangled web of group debts to the minimum number of transactions using a graph cash-flow algorithm ([`balance-engine.ts`](src/domain/balances/balance-engine.ts)).
+- **🧪 295 Passing Tests:** Comprehensive Vitest test suite covering multi-currency edge cases, settlement snapshots, receipt parsing heuristics, and guest data migrations.
 
 ---
 
-## 🧱 Use Tabby as a base
-
-Tabby is organised so you can rebrand it or build new features without fighting the codebase.
+## 🧱 Codebase Structure
 
 ```text
 src/
-├── app/            # Router, providers, app shell
-├── components/     # UI building blocks (ui/ = shadcn-style primitives)
-├── domain/         # Pure logic, no React or network: money, splits, balances, validation
-├── features/       # One folder per page: dashboard, friends, groups, expenses, reports, …
-├── hooks/          # Data hooks (TanStack Query) over the services
-├── lib/            # Supabase client and database types
-├── services/       # Supabase, currency and exchange-rate services
-└── styles/         # Tailwind theme (globals.css)
-supabase/migrations # Database schema, security policies and functions
+├── app/            # App shell, router definitions, global providers
+├── components/     # UI building blocks (ui/ = shadcn-style primitives, receipts/ = OCR modal)
+├── domain/         # Pure business logic: money math, receipt parser, splits, balances
+├── features/       # Feature pages: dashboard, expenses, friends, groups, reports, settings
+├── hooks/          # Data hooks powered by TanStack Query
+├── lib/            # Supabase client, database types, utility helpers
+├── services/       # OCR service, Supabase adapters, Frankfurter currency service
+└── styles/         # Tailwind CSS v4 design tokens and theme variables
+supabase/migrations # Production SQL schema migrations, RLS policies, and RPCs
 ```
 
-### Common customisations
+---
 
-| I want to… | Change |
+## 📜 Available Scripts
+
+| Command | Description |
 | :--- | :--- |
-| Rename / rebrand | `index.html` title, `public/manifest.webmanifest`, `public/favicon.svg` and the app icons, `src/components/common/tabby-icon.tsx` |
-| Change colours or corner radius | CSS variables in `src/styles/globals.css` |
-| Change the default categories | The seed at the end of `supabase/migrations/20261022000001_initial_schema.sql`, and the fallback list in `src/hooks/use-categories.ts` |
-| Support another currency | Add it to `CURRENCY_INFO` in `src/domain/money/money.ts` (any ISO code already works, using its standard decimal places) |
-| Add a page | Create `src/features/<name>/`, then register the route in `src/app/router.tsx` |
-| Change the database | Add a **new** file in `supabase/migrations/`; never edit one that's already applied |
-
-### House rules (they keep the money correct)
-
-1. Keep amounts as integer minor units, and parse or format them with `src/domain/money`.
-2. Convert currencies only through `src/services/currency`. Never multiply by a rate inside a component.
-3. Every new table needs row-level security policies before the app reads it.
+| `npm run dev` | Start local Vite development server at <http://localhost:5173> |
+| `npm run build` | Type-check TypeScript and build production bundle to `dist/` |
+| `npm test` | Run all 295 Vitest unit and integration tests |
+| `npm run lint` | Run fast static code analysis with oxlint |
+| `npm run preview` | Preview production build locally |
+| `npm run db:inspect` | Inspect Supabase database tables and RLS status |
+| `npm run deploy` | Build and deploy directly to GitHub Pages |
 
 ---
 
-## 📜 Scripts
+## 🔐 Privacy & Security
 
-| Command | What it does |
-| :--- | :--- |
-| `npm run dev` | Start the dev server at <http://localhost:5173> |
-| `npm run build` | Type-check and build to `dist/` |
-| `npm run preview` | Serve the production build locally |
-| `npm test` | Run the Vitest suite |
-| `npm run lint` | Lint with oxlint |
-| `npm run db:inspect` | Read-only check that every table exists and is reachable |
-| `npm run deploy` | Build and publish to GitHub Pages |
-
----
-
-## 🌍 Deploy to GitHub Pages
-
-The app is served from `/<repo>/`, so if you fork it under a different name, first update:
-
-- `base` in [`vite.config.ts`](vite.config.ts) (currently `/Tabby/`)
-- `homepage` in [`package.json`](package.json)
-- the production URL in Supabase's redirect URLs
-
-Then choose one way to publish:
-
-- **From your machine:** run `npm run deploy` with your `.env` in place. It builds and pushes to a `gh-pages` branch. Set **Settings → Pages → Source** to that branch.
-- **From GitHub Actions:** add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as repository secrets and set **Pages → Source** to **GitHub Actions**. [`deploy.yml`](.github/workflows/deploy.yml) then deploys on every push to `master`.
-
----
-
-## 🔐 Privacy & security
-
-- The frontend only ever holds the public Supabase key; access is enforced by row-level security in the database.
-- Sign-in is Google OAuth through Supabase. Tabby never sees your password.
-- There are no analytics or trackers. The full policy is in [`public/privacy.html`](public/privacy.html).
-
----
-
-## 🤝 Contributing
-
-Issues and pull requests are welcome. Some good first ideas:
-
-- In-app account deletion
-- Receipt photos on expenses
-- Recurring expenses (rent, subscriptions)
-
-Before opening a PR, please run `npm test` and `npm run build`.
+- All database access is gated by Postgres Row-Level Security policies; the client only holds the public anon key.
+- Authentication uses Google OAuth through Supabase; Tabby never collects or stores passwords.
+- Receipt images scanned with OCR are processed entirely on your device in browser memory and are never uploaded or stored on servers.
+- Zero tracking or analytics cookies. Full policy available in [`public/privacy.html`](public/privacy.html).
 
 ---
 
 <div align="center">
 
-Built by [**Nikhil Bansal**](https://nikhil9182.github.io/) · [GitHub](https://github.com/Nikhil9182)
+Built with care by [**Nikhil Bansal**](https://nikhil9182.github.io/) · [GitHub](https://github.com/Nikhil9182)
 
-If Tabby helped you, a ⭐ helps others find it.
+If Tabby helped simplify your shared expenses, consider giving it a ⭐!
 
 </div>
