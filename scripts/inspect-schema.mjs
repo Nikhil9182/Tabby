@@ -51,6 +51,7 @@ const EXPECTED_TABLES = [
   'categories',
   'currency_rates_cache',
   'friendships',
+  'expense_receipts',
 ];
 
 async function main() {

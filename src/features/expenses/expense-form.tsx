@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useCollaboration } from '@/hooks/use-collaboration';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
@@ -19,8 +19,11 @@ import {
   PieChart,
   Camera,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { ReceiptScannerDialog } from '@/components/receipts/receipt-scanner-dialog';
+import { compressImageForStorage } from '@/services/image/image-compression';
+import { receiptService } from '@/services/receipts/receipt-service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -126,6 +129,48 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
   const queryScan = searchParams.get('scan') === 'true' || searchParams.get('scan') === '1';
   const [isScannerOpen, setIsScannerOpen] = useState(queryScan);
+
+  // Optional manual receipt attachment
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (receiptPreviewUrl) {
+        URL.revokeObjectURL(receiptPreviewUrl);
+      }
+    };
+  }, [receiptPreviewUrl]);
+
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setSubmitError('Please select a JPG, PNG, or WebP receipt image.');
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setSubmitError('Receipt image must be smaller than 15MB.');
+      return;
+    }
+    if (receiptPreviewUrl) {
+      URL.revokeObjectURL(receiptPreviewUrl);
+    }
+    setReceiptFile(file);
+    setReceiptPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleRemoveReceiptFile = () => {
+    if (receiptPreviewUrl) {
+      URL.revokeObjectURL(receiptPreviewUrl);
+    }
+    setReceiptFile(null);
+    setReceiptPreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -611,6 +656,24 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       percentageBasisPoints: splitType === 'percentage' ? Math.round((percentages[s.userId] || 0) * 100) : undefined,
     }));
 
+    const uploadReceiptIfPresent = async (targetExpenseId: string) => {
+      if (!receiptFile || !targetExpenseId) return;
+      try {
+        const compressed = await compressImageForStorage(receiptFile, {
+          maxDimension: 1600,
+          quality: 0.75,
+          outputFileName: receiptFile.name,
+        });
+        await receiptService.uploadReceiptAttachment({
+          expenseId: targetExpenseId,
+          file: compressed.file,
+          originalFilename: receiptFile.name,
+        });
+      } catch (receiptErr) {
+        console.error('Failed to attach receipt to expense:', receiptErr);
+      }
+    };
+
     try {
       const expenseDateISO = new Date(data.expenseDate).toISOString();
       const rateSnapshot = await buildRateSnapshot(totalAmountMinor, data.currency, data.expenseDate.slice(0, 10));
@@ -641,9 +704,10 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             expenseDate: expenseDateISO,
             splits: finalSplits,
           });
+          await uploadReceiptIfPresent(expenseId);
           navigate(`/friends?friendId=${selectedFriendId}`);
         } else {
-          await createExpense({
+          const created = await createExpense({
             description: data.description,
             amountMinor: totalAmountMinor,
             originalAmountMinor: totalAmountMinor,
@@ -662,6 +726,9 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             splits: finalSplits,
             createdBy: currentUserId,
           });
+          if (created?.id) {
+            await uploadReceiptIfPresent(created.id);
+          }
           navigate(`/friends?friendId=${selectedFriendId}`);
         }
       } else {
@@ -689,9 +756,10 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             expenseDate: expenseDateISO,
             splits: finalSplits,
           });
+          await uploadReceiptIfPresent(expenseId);
           navigate(`/groups/${selectedGroupId}`);
         } else {
-          await createExpense({
+          const created = await createExpense({
             description: data.description,
             amountMinor: totalAmountMinor,
             originalAmountMinor: totalAmountMinor,
@@ -710,6 +778,9 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             splits: finalSplits,
             createdBy: currentUserId,
           });
+          if (created?.id) {
+            await uploadReceiptIfPresent(created.id);
+          }
           navigate(`/groups/${selectedGroupId}`);
         }
       }
@@ -1065,6 +1136,68 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
                 placeholder="Add receipt details, items breakdown, or notes..."
                 className="resize-none h-20 text-sm"
               />
+            </div>
+
+            {/* Receipt Image Attachment (Optional) */}
+            <div className="space-y-2 pt-2 border-t border-border/40">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Camera className="h-3.5 w-3.5" />
+                  <span>Attach Receipt Image (Optional)</span>
+                </label>
+                {receiptPreviewUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={handleRemoveReceiptFile}
+                    className="h-6 text-xs text-rose-500 hover:text-rose-600 gap-1 px-2"
+                  >
+                    <X className="h-3 w-3" />
+                    <span>Remove</span>
+                  </Button>
+                )}
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                className="hidden"
+                onChange={handleReceiptFileChange}
+              />
+
+              {receiptPreviewUrl && receiptFile ? (
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-muted/20">
+                  <div className="h-14 w-14 rounded-lg overflow-hidden border border-border/60 bg-black/5 shrink-0 relative">
+                    <img
+                      src={receiptPreviewUrl}
+                      alt="Receipt preview"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <p className="font-medium text-xs truncate text-foreground">
+                      {receiptFile.name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {(receiptFile.size / 1024).toFixed(1)} KB • Will be saved with this expense
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full gap-2 border-dashed h-10 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <Camera className="h-4 w-4" />
+                  <span>Choose or capture receipt photo</span>
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

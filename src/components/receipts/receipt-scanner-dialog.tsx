@@ -21,6 +21,9 @@ import type {
   ParsedReceipt,
   ReceiptSplitResult,
 } from '@/domain/receipts/types';
+import { Checkbox } from '@/components/ui/checkbox';
+import { compressImageForStorage } from '@/services/image/image-compression';
+import { receiptService } from '@/services/receipts/receipt-service';
 import { Sparkles, Camera, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export type ReceiptFlowStep = 'upload' | 'review' | 'split';
@@ -59,6 +62,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
   const [step, setStep] = useState<ReceiptFlowStep>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
+  const [attachReceipt, setAttachReceipt] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<OCRProgress | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -76,6 +81,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
       }
       setStep('upload');
       setSelectedFile(null);
+      setOriginalFile(null);
+      setAttachReceipt(true);
       setIsProcessing(false);
       setOcrProgress(null);
       setOcrError(null);
@@ -88,6 +95,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   // Handle OCR recognition when file is selected
   const handleImageSelected = async (file: File) => {
     setSelectedFile(file);
+    setOriginalFile(file);
     setOcrError(null);
     setIsProcessing(true);
 
@@ -212,6 +220,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
       // Determine splitType: if equal, save as 'equal', otherwise 'exact'
       const splitType = splitResult.mode === 'equal' ? 'equal' : 'exact';
+      let createdExpenseId: string | null = null;
 
       if (contextType === 'direct') {
         if (!friendId) {
@@ -240,9 +249,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
           createdBy: currentUserId,
         });
 
-        onExpenseSaved?.(created.id);
-        onClose();
-        navigate(`/friends?friendId=${friendId}`);
+        createdExpenseId = created.id;
       } else {
         // Group context
         if (!groupId || groupId === 'personal') {
@@ -271,8 +278,36 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
           createdBy: currentUserId,
         });
 
-        onExpenseSaved?.(created.id);
-        onClose();
+        createdExpenseId = created.id;
+      }
+
+      // Attach compressed storage receipt if enabled
+      if (attachReceipt && originalFile && createdExpenseId) {
+        try {
+          const compressed = await compressImageForStorage(originalFile, {
+            maxDimension: 1600,
+            quality: 0.75,
+            outputFileName: originalFile.name,
+          });
+
+          await receiptService.uploadReceiptAttachment({
+            expenseId: createdExpenseId,
+            file: compressed.file,
+            originalFilename: originalFile.name,
+          });
+        } catch (uploadErr) {
+          console.error('Failed to attach receipt to saved expense:', uploadErr);
+        }
+      }
+
+      if (createdExpenseId) {
+        onExpenseSaved?.(createdExpenseId);
+      }
+      onClose();
+
+      if (contextType === 'direct') {
+        navigate(`/friends?friendId=${friendId}`);
+      } else {
         navigate(`/groups/${groupId}`);
       }
     } catch (err: any) {
@@ -378,6 +413,28 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
           {step === 'split' && parsedReceipt && (
             <div className="space-y-4">
+              {/* Optional Attach Receipt Toggle */}
+              {originalFile && (
+                <div className="flex items-center justify-between p-3.5 rounded-xl border border-border/70 bg-card shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="attach-receipt-checkbox"
+                      checked={attachReceipt}
+                      onCheckedChange={(checked) => setAttachReceipt(Boolean(checked))}
+                    />
+                    <label
+                      htmlFor="attach-receipt-checkbox"
+                      className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                    >
+                      Attach receipt image to this expense
+                    </label>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    {(originalFile.size / 1024).toFixed(0)} KB original
+                  </span>
+                </div>
+              )}
+
               <ReceiptSplitAssigner
                 receipt={parsedReceipt}
                 participants={participants}

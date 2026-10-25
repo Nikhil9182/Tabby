@@ -18,6 +18,27 @@ vi.mock('@/hooks/use-expenses', () => ({
   useExpenses: vi.fn(),
 }));
 
+vi.mock('@/services/image/image-compression', () => ({
+  compressImageForStorage: vi.fn().mockResolvedValue({
+    file: new File(['compressed'], 'receipt.jpg', { type: 'image/jpeg' }),
+    blob: new Blob(['compressed'], { type: 'image/jpeg' }),
+    width: 800,
+    height: 600,
+    originalSize: 1000,
+    compressedSize: 500,
+    mimeType: 'image/jpeg',
+  }),
+}));
+
+vi.mock('@/services/receipts/receipt-service', () => ({
+  receiptService: {
+    uploadReceiptAttachment: vi.fn().mockResolvedValue({ id: 'rec_1', storagePath: 'test/path.jpg' }),
+    getReceiptForExpense: vi.fn(),
+    getReceiptSignedUrl: vi.fn(),
+    deleteReceiptAttachment: vi.fn(),
+  },
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');

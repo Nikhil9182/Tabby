@@ -100,6 +100,19 @@ export interface GuestSettlementRecord extends DbSettlement {
   migratedId?: string | null;
 }
 
+export interface GuestReceiptRecord {
+  id: string;
+  expenseId: string;
+  storagePath: string;
+  uploadedBy: string;
+  originalFilename?: string | null;
+  contentType: string;
+  fileSize: number;
+  dataUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface GuestDataSummary {
   expensesCount: number;
   groupsCount: number;
@@ -934,6 +947,57 @@ class GuestStore {
     if (!existing) return;
     existing.deleted_at = new Date().toISOString();
     await putRecord(STORES.SETTLEMENTS, existing);
+  }
+
+  // --------------------------------------------------------------------------
+  // Receipts
+  // --------------------------------------------------------------------------
+
+  async saveReceipt(input: {
+    expenseId: string;
+    file: File | Blob;
+    originalFilename?: string;
+  }): Promise<GuestReceiptRecord> {
+    const guestId = this.getGuestUserId();
+    const now = new Date().toISOString();
+    const id = uuidv4();
+
+    let dataUrl: string | undefined;
+    if (typeof FileReader !== 'undefined') {
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(input.file);
+      });
+    }
+
+    const record: GuestReceiptRecord = {
+      id,
+      expenseId: input.expenseId,
+      storagePath: `guest/${guestId}/${input.expenseId}/${id}.jpg`,
+      uploadedBy: guestId,
+      originalFilename:
+        input.originalFilename ||
+        (input.file instanceof File ? input.file.name : 'receipt.jpg'),
+      contentType: input.file.type || 'image/jpeg',
+      fileSize: input.file.size,
+      dataUrl,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await putRecord(STORES.RECEIPTS, record);
+    return record;
+  }
+
+  async getReceiptForExpense(expenseId: string): Promise<GuestReceiptRecord | null> {
+    const all = await getAllRecords<GuestReceiptRecord>(STORES.RECEIPTS);
+    return all.find((r) => r.expenseId === expenseId) || null;
+  }
+
+  async deleteReceipt(id: string): Promise<void> {
+    await deleteRecord(STORES.RECEIPTS, id);
   }
 
   // --------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // Robust, typed IndexedDB storage wrapper for Tabby Guest Mode.
 
 export const GUEST_DB_NAME = 'tabby_guest_db';
-export const GUEST_DB_VERSION = 1;
+export const GUEST_DB_VERSION = 2;
 
 export const STORES = {
   META: 'meta',
@@ -13,6 +13,7 @@ export const STORES = {
   EXPENSES: 'expenses',
   EXPENSE_SPLITS: 'expense_splits',
   SETTLEMENTS: 'settlements',
+  RECEIPTS: 'receipts',
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -88,6 +89,12 @@ export function openGuestDB(): Promise<IDBDatabase> {
         store.createIndex('contextType', 'contextType', { unique: false });
         store.createIndex('fromUserId', 'fromUserId', { unique: false });
         store.createIndex('toUserId', 'toUserId', { unique: false });
+      }
+
+      // 9. Receipts
+      if (!db.objectStoreNames.contains(STORES.RECEIPTS)) {
+        const store = db.createObjectStore(STORES.RECEIPTS, { keyPath: 'id' });
+        store.createIndex('expenseId', 'expenseId', { unique: true });
       }
     };
 

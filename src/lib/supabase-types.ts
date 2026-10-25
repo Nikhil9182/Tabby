@@ -441,6 +441,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      expense_receipts: {
+        Row: {
+          id: string;
+          expense_id: string;
+          storage_path: string;
+          uploaded_by: string;
+          original_filename: string | null;
+          content_type: string;
+          file_size: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          storage_path: string;
+          uploaded_by: string;
+          original_filename?: string | null;
+          content_type?: string;
+          file_size: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          storage_path?: string;
+          uploaded_by?: string;
+          original_filename?: string | null;
+          content_type?: string;
+          file_size?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;

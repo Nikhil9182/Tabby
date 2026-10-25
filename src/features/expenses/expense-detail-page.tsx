@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -10,6 +10,10 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
+  Camera,
+  FileImage,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -33,9 +37,12 @@ import {
   useUsers,
   useGroups,
   useCategories,
+  useReceipt,
 } from '@/hooks';
 import { formatDate } from '@/lib/date';
 import { formatMoney } from '@/domain/money/money';
+import { ReceiptViewerModal } from '@/components/receipts/receipt-viewer-modal';
+import { compressImageForStorage } from '@/services/image/image-compression';
 
 export function ExpenseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +66,44 @@ export function ExpenseDetailPage() {
   const { categories } = useCategories();
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [receiptViewerOpen, setReceiptViewerOpen] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    receipt,
+    isLoading: isReceiptLoading,
+    uploadReceipt,
+    isUploading: isUploadingReceipt,
+    deleteReceipt,
+    isDeleting: isDeletingReceipt,
+  } = useReceipt(expense?.id);
+
+  const handleAttachFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !expense) return;
+    try {
+      setAttachError(null);
+      const compressed = await compressImageForStorage(file, {
+        maxDimension: 1600,
+        quality: 0.75,
+        outputFileName: file.name,
+      });
+      await uploadReceipt({
+        file: compressed.file,
+        originalFilename: file.name,
+        width: compressed.width,
+        height: compressed.height,
+      });
+    } catch (err: any) {
+      console.error('Failed to attach receipt:', err);
+      setAttachError(err?.message || 'Failed to attach receipt image');
+    } finally {
+      if (attachInputRef.current) {
+        attachInputRef.current.value = '';
+      }
+    }
+  };
 
   if (isLoading) {
     return (
@@ -140,6 +185,18 @@ export function ExpenseDetailPage() {
         </Button>
 
         <div className="flex items-center gap-2">
+          {receipt && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReceiptViewerOpen(true)}
+              className="gap-1.5"
+            >
+              <Receipt className="h-3.5 w-3.5" />
+              <span>View Receipt</span>
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -260,6 +317,105 @@ export function ExpenseDetailPage() {
             </div>
           )}
 
+          {/* Attached Receipt Section */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5" />
+                <span>Receipt Attachment</span>
+              </span>
+              {receipt && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setReceiptViewerOpen(true)}
+                  className="text-xs h-7 px-2 gap-1 text-primary hover:text-primary"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  <span>Inspect</span>
+                </Button>
+              )}
+            </div>
+
+            {isReceiptLoading ? (
+              <div className="h-16 rounded-xl border border-border/40 bg-muted/20 animate-pulse flex items-center px-4 gap-3">
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <div className="space-y-1">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+            ) : receipt ? (
+              <div
+                onClick={() => setReceiptViewerOpen(true)}
+                className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <FileImage className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-0.5 min-w-0">
+                    <p className="font-semibold text-sm truncate text-foreground">
+                      {receipt.originalFilename || 'Receipt Image'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(receipt.fileSize / 1024).toFixed(1)} KB • Attached {formatDate(receipt.createdAt, 'MMM d, yyyy')}
+                    </p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" className="shrink-0 gap-1.5 text-xs">
+                  <Eye className="h-3.5 w-3.5" />
+                  <span>View</span>
+                </Button>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl border border-dashed border-border/70 bg-muted/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-medium text-foreground">No receipt photo attached</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Upload or take a photo of the bill to keep with this record.
+                  </p>
+                </div>
+                <div>
+                  <input
+                    ref={attachInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleAttachFile}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => attachInputRef.current?.click()}
+                    disabled={isUploadingReceipt}
+                    className="gap-1.5 text-xs w-full sm:w-auto h-8"
+                  >
+                    {isUploadingReceipt ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="h-3.5 w-3.5" />
+                        <span>Attach Receipt</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {attachError && (
+              <p className="text-xs text-rose-500 flex items-center gap-1 mt-1">
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>{attachError}</span>
+              </p>
+            )}
+          </div>
+
           {/* Participant Shares Breakdown */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold tracking-tight text-foreground uppercase tracking-wider">
@@ -361,6 +517,24 @@ export function ExpenseDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Receipt Viewer Modal */}
+      <ReceiptViewerModal
+        isOpen={receiptViewerOpen}
+        onClose={() => setReceiptViewerOpen(false)}
+        receipt={receipt}
+        expenseDescription={expense.description}
+        onDeleteReceipt={async () => {
+          if (receipt) {
+            await deleteReceipt({
+              receiptId: receipt.id,
+              storagePath: receipt.storagePath,
+            });
+            setReceiptViewerOpen(false);
+          }
+        }}
+        isDeleting={isDeletingReceipt}
+      />
     </div>
   );
 }
