@@ -297,7 +297,7 @@ describe('ReceiptScannerDialog Integration Flow', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/groups/group_lunch');
   });
 
-  it('supports AI Smart Scan mode when user is authenticated with cloud AI available', async () => {
+  it('supports cloud scanning when user is authenticated with cloud AI available', async () => {
     vi.mocked(useGeminiConfig).mockReturnValue({
       isAvailable: true,
       isAuthenticated: true,
@@ -326,9 +326,6 @@ describe('ReceiptScannerDialog Integration Flow', () => {
 
     renderComponent();
 
-    // Verify engine toggle is visible
-    expect(screen.getByText(/AI Smart Scan \(Cloud Vision\)/i)).toBeTruthy();
-
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['dummy'], 'receipt.jpg', { type: 'image/jpeg' });
     await userEvent.upload(input, file);
@@ -340,14 +337,14 @@ describe('ReceiptScannerDialog Integration Flow', () => {
     });
   });
 
-  it('provides seamless fallback to Local OCR when AI scanning encounters an error', async () => {
+  it('provides seamless automatic fallback to Local OCR when cloud scanning encounters an error or timeout', async () => {
     vi.mocked(useGeminiConfig).mockReturnValue({
       isAvailable: true,
       isAuthenticated: true,
     });
 
     vi.spyOn(geminiReceiptService, 'parseReceipt').mockRejectedValue(
-      new Error('AI rate limit reached. Please wait a moment or use Local OCR.')
+      new Error('AI rate limit reached or high demand')
     );
 
     const fixtureText = `
@@ -373,17 +370,7 @@ describe('ReceiptScannerDialog Integration Flow', () => {
     const file = new File(['dummy'], 'receipt.jpg', { type: 'image/jpeg' });
     await userEvent.upload(input, file);
 
-    // Verify error is displayed
-    await waitFor(() => {
-      expect(screen.getByText(/AI rate limit reached/i)).toBeTruthy();
-    });
-
-    // Click "Try Local OCR"
-    const fallbackBtn = screen.getByRole('button', { name: /Try Local OCR/i });
-    expect(fallbackBtn).toBeTruthy();
-    await userEvent.click(fallbackBtn);
-
-    // Verify OCR was triggered and review screen opens
+    // Verify OCR was automatically triggered without requiring any user click
     await waitFor(() => {
       expect(ocrService.recognize).toHaveBeenCalled();
       expect(screen.getByText(/Review Scanned Details/i)).toBeTruthy();

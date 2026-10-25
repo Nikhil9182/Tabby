@@ -27,8 +27,7 @@ import { compressImageForStorage } from '@/services/image/image-compression';
 import { receiptService } from '@/services/receipts/receipt-service';
 import { geminiReceiptService } from '@/services/ai/gemini-receipt-service';
 import { useGeminiConfig } from '@/hooks/use-gemini-config';
-import { cn } from '@/lib/utils';
-import { Sparkles, Camera, CheckCircle2, AlertCircle, Cpu, ArrowRight } from 'lucide-react';
+import { Sparkles, AlertCircle } from 'lucide-react';
 
 export type ReceiptFlowStep = 'upload' | 'review' | 'split';
 
@@ -64,10 +63,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const navigate = useNavigate();
   const { createExpense, isCreating } = useExpenses();
 
-  const { isAvailable: isAiAvailable, isAuthenticated } = useGeminiConfig();
-  const [scanEngine, setScanEngine] = useState<'ai' | 'ocr'>(() => {
-    return isAiAvailable ? 'ai' : 'ocr';
-  });
+  const { isAvailable: isAiAvailable } = useGeminiConfig();
 
   const [step, setStep] = useState<ReceiptFlowStep>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -81,15 +77,6 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Sync scanEngine when isAiAvailable changes
-  useEffect(() => {
-    if (isAiAvailable) {
-      setScanEngine('ai');
-    } else {
-      setScanEngine('ocr');
-    }
-  }, [isAiAvailable]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -110,9 +97,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     }
   }, [isOpen]);
 
-  // Handle OCR or AI recognition when file is selected
-  const handleImageSelected = async (file: File, overrideEngine?: 'ai' | 'ocr') => {
-    const activeEngine = overrideEngine || scanEngine;
+  // Handle receipt recognition: tries cloud vision first (if available), automatically falls back to local OCR
+  const handleImageSelected = async (file: File) => {
     setSelectedFile(file);
     setOriginalFile(file);
     setOcrError(null);
@@ -124,51 +110,66 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     const targetCurrency = contextCurrency || defaultCurrency;
 
     try {
-      if (activeEngine === 'ai' && isAiAvailable) {
+      let parsed: ParsedReceipt | null = null;
+
+      // 1. Attempt cloud vision scanning if available
+      if (isAiAvailable) {
         setOcrProgress({
           status: 'recognizing',
           progress: 0.35,
-          message: 'AI is analyzing receipt items & taxes via secure cloud edge...',
+          message: 'Scanning receipt...',
         });
 
-        const parsed = await geminiReceiptService.parseReceipt(
-          file,
-          targetCurrency,
-          abortController.signal
-        );
+        try {
+          parsed = await geminiReceiptService.parseReceipt(
+            file,
+            targetCurrency,
+            abortController.signal
+          );
+        } catch (cloudErr: any) {
+          if (cloudErr?.name === 'AbortError') {
+            return;
+          }
+          console.warn('Cloud scan encountered an issue, automatically falling back to local OCR:', cloudErr);
+          // Fall through to local OCR seamlessly
+        }
+      }
 
-        setOcrProgress({
-          status: 'completed',
-          progress: 1.0,
-          message: 'Receipt parsed successfully by Gemini AI.',
-        });
+      // 2. Fall back to local OCR if cloud vision was unavailable or failed
+      if (!parsed) {
+        if (abortController.signal.aborted) {
+          return;
+        }
 
-        setParsedReceipt(parsed);
-        setStep('review');
-      } else {
         setOcrProgress({
           status: 'loading',
-          progress: 0.15,
-          message: 'Running local OCR engine...',
+          progress: 0.2,
+          message: 'Scanning receipt...',
         });
 
         const rawData = await ocrService.recognize(
           file,
-          (p) => setOcrProgress(p),
+          (p) => setOcrProgress({ ...p, message: 'Scanning receipt...' }),
           abortController.signal
         );
 
-        const parsed = parseReceipt(rawData, targetCurrency);
-        setParsedReceipt(parsed);
-        setStep('review');
+        parsed = parseReceipt(rawData, targetCurrency);
       }
+
+      setOcrProgress({
+        status: 'completed',
+        progress: 1.0,
+        message: 'Receipt parsed successfully.',
+      });
+
+      setParsedReceipt(parsed);
+      setStep('review');
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         // User cancelled
         return;
       }
-      const msg = err instanceof Error ? err.message : 'Failed to extract receipt text';
-      setOcrError(msg);
+      setOcrError('Could not read receipt image. Please try a clearer photo or enter details manually.');
     } finally {
       setIsProcessing(false);
       abortControllerRef.current = null;
@@ -186,13 +187,6 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const handleRetryOcr = () => {
     if (selectedFile) {
       handleImageSelected(selectedFile);
-    }
-  };
-
-  const handleSwitchToOcr = () => {
-    setScanEngine('ocr');
-    if (selectedFile) {
-      handleImageSelected(selectedFile, 'ocr');
     }
   };
 
@@ -488,65 +482,6 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 overscroll-contain">
           {step === 'upload' && (
             <div className="space-y-4">
-              {/* Engine Switcher or Guest Mode Notice */}
-              {isAiAvailable ? (
-                <div className="flex items-center justify-center p-1 bg-muted/40 rounded-xl border border-border/50 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setScanEngine('ai')}
-                    disabled={isProcessing}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all',
-                      scanEngine === 'ai'
-                        ? 'bg-background text-primary shadow-xs border border-border/60'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <Sparkles className="h-3.5 w-3.5 text-[#0055FF] dark:text-[#3B82F6]" />
-                    <span>AI Smart Scan (Cloud Vision)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setScanEngine('ocr')}
-                    disabled={isProcessing}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all',
-                      scanEngine === 'ocr'
-                        ? 'bg-background text-primary shadow-xs border border-border/60'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <Camera className="h-3.5 w-3.5" />
-                    <span>Local OCR (Offline)</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/20 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Camera className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">
-                      Running in <strong>Local OCR Mode</strong> (Tesseract engine).
-                      {!isAuthenticated && ' Sign in to enable AI Smart Scanning.'}
-                    </span>
-                  </div>
-                  {!isAuthenticated && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10 shrink-0 gap-1"
-                      onClick={() => {
-                        onClose();
-                        navigate('/welcome');
-                      }}
-                    >
-                      <span>Sign In</span>
-                      <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              )}
-
               <ReceiptImageUploader
                 onImageSelected={handleImageSelected}
                 isProcessing={isProcessing}
@@ -555,24 +490,6 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
                 onCancel={handleCancelOcr}
                 onRetry={handleRetryOcr}
               />
-
-              {ocrError && scanEngine === 'ai' && (
-                <div className="flex items-center justify-between p-3 rounded-xl border border-border/70 bg-muted/20 text-xs">
-                  <span className="text-muted-foreground">
-                    AI scan encountered an error. You can try parsing with local OCR.
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSwitchToOcr}
-                    className="h-7 text-xs shrink-0 gap-1.5"
-                  >
-                    <Camera className="h-3.5 w-3.5" />
-                    <span>Try Local OCR</span>
-                  </Button>
-                </div>
-              )}
             </div>
           )}
 

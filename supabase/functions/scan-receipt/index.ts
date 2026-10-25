@@ -228,7 +228,7 @@ Rules:
 
     for (const targetModel of uniqueModels) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
       try {
@@ -251,13 +251,16 @@ Rules:
 
         const isModelUnavailable =
           geminiRes.status === 404 ||
+          geminiRes.status === 503 ||
+          errMsg.includes("high demand") ||
+          errMsg.includes("temporarily unavailable") ||
           errMsg.includes("no longer available") ||
           errMsg.includes("not found") ||
           errMsg.includes("is not supported") ||
           errMsg.includes("deprecated");
 
         if (isModelUnavailable) {
-          console.warn(`Model ${targetModel} unavailable (${errMsg}). Trying next model candidate...`);
+          console.warn(`Model ${targetModel} unavailable or busy (${errMsg}). Trying next model candidate...`);
           lastError = errMsg;
 
           // Check if Google suggested a replacement model in the error message
@@ -271,24 +274,24 @@ Rules:
 
         if (geminiRes.status === 429) {
           return new Response(
-            JSON.stringify({ error: "Gemini quota or rate limit reached. Please try again shortly or use local OCR." }),
+            JSON.stringify({ error: "Gemini quota or rate limit reached. Please try again shortly." }),
             { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         return new Response(
-          JSON.stringify({ error: `AI Vision processing error: ${errMsg}` }),
+          JSON.stringify({ error: `Vision processing error: ${errMsg}` }),
           { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (fetchErr: any) {
         clearTimeout(timeoutId);
         if (fetchErr?.name === "AbortError") {
           return new Response(
-            JSON.stringify({ error: "Gemini Vision API request timed out after 25 seconds. Please use local OCR." }),
+            JSON.stringify({ error: "Vision API request timed out after 60 seconds." }),
             { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        lastError = fetchErr?.message || "Network error connecting to Gemini";
+        lastError = fetchErr?.message || "Network error connecting to Vision API";
       }
     }
 
