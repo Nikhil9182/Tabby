@@ -3,6 +3,7 @@ import {
   receiptService,
   type ReceiptAttachment,
   type UploadReceiptInput,
+  type SaveReceiptItemsInput,
 } from '@/services/receipts/receipt-service';
 
 export interface UseReceiptUploadInput {
@@ -53,11 +54,27 @@ export function useReceipt(expenseId?: string) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (args: { receiptId: string; storagePath: string }) => {
+    mutationFn: async (args: { receiptId: string; storagePath?: string | null }) => {
       return receiptService.deleteReceiptAttachment(args.receiptId, args.storagePath);
     },
     onSuccess: () => {
       queryClient.setQueryData(queryKey, null);
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense', expenseId] });
+    },
+  });
+
+  const saveItemsMutation = useMutation({
+    mutationFn: async (input: SaveReceiptItemsInput) => {
+      const targetExpenseId = input.expenseId || expenseId;
+      if (!targetExpenseId) throw new Error('Expense ID is required to save receipt items.');
+      return receiptService.saveReceiptItems({
+        ...input,
+        expenseId: targetExpenseId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['expense', expenseId] });
     },
@@ -73,5 +90,7 @@ export function useReceipt(expenseId?: string) {
     isUploading: uploadMutation.isPending,
     deleteReceipt: deleteMutation.mutateAsync,
     isDeleting: deleteMutation.isPending,
+    saveReceiptItems: saveItemsMutation.mutateAsync,
+    isSavingItems: saveItemsMutation.isPending,
   };
 }

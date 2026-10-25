@@ -221,16 +221,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         assignedUserIds: itemAssignmentsMap[it.id],
       }));
 
-      const notes = formatReceiptNotes({
-        items: itemsPayload,
-        taxMinor: parsedReceipt.taxMinor,
-        discountMinor: parsedReceipt.discountMinor,
-        tipMinor: parsedReceipt.tipMinor,
-        serviceChargeMinor: parsedReceipt.serviceChargeMinor,
-        subtotalMinor: parsedReceipt.itemSubtotalMinor,
-        totalMinor: totalAmountMinor,
-        currency: receiptCurrency,
-      });
+      // Items are stored directly in receipt storage, not dumped into user notes
+      const notes = undefined;
 
       const rateSnapshot = await buildRateSnapshot(totalAmountMinor, receiptCurrency, expenseDate);
 
@@ -301,6 +293,25 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         });
 
         createdExpenseId = created.id;
+      }
+
+      // Save structured itemized receipt data
+      if (createdExpenseId) {
+        try {
+          await receiptService.saveReceiptItems({
+            expenseId: createdExpenseId,
+            items: itemsPayload,
+            taxMinor: parsedReceipt.taxMinor,
+            discountMinor: parsedReceipt.discountMinor,
+            tipMinor: parsedReceipt.tipMinor,
+            serviceChargeMinor: parsedReceipt.serviceChargeMinor,
+            subtotalMinor: parsedReceipt.itemSubtotalMinor,
+            totalMinor: totalAmountMinor,
+            currency: receiptCurrency,
+          });
+        } catch (itemSaveErr) {
+          console.error('Failed to save structured receipt items:', itemSaveErr);
+        }
       }
 
       // Attach compressed storage receipt if enabled

@@ -1,11 +1,12 @@
 import { supabase } from '@/lib/supabase';
 import { guestStore } from '@/services/guest/guest-store';
 import { v4 as uuidv4 } from 'uuid';
+import type { ParsedExpenseItem } from '@/domain/receipts/receipt-item-parser';
 
 export interface ReceiptAttachment {
   id: string;
   expenseId: string;
-  storagePath: string;
+  storagePath: string | null;
   uploadedBy: string;
   originalFilename?: string | null;
   contentType: string;
@@ -13,12 +14,31 @@ export interface ReceiptAttachment {
   createdAt: string;
   updatedAt: string;
   signedUrl?: string;
+  items?: ParsedExpenseItem[];
+  subtotalMinor?: number;
+  taxMinor?: number;
+  discountMinor?: number;
+  tipMinor?: number;
+  serviceChargeMinor?: number;
+  totalMinor?: number;
 }
 
 export interface UploadReceiptInput {
   expenseId: string;
   file: File | Blob;
   originalFilename?: string;
+}
+
+export interface SaveReceiptItemsInput {
+  expenseId?: string;
+  items: ParsedExpenseItem[];
+  subtotalMinor?: number;
+  taxMinor?: number;
+  discountMinor?: number;
+  tipMinor?: number;
+  serviceChargeMinor?: number;
+  totalMinor?: number;
+  currency: string;
 }
 
 const STORAGE_BUCKET = 'receipts';
@@ -148,6 +168,13 @@ class ReceiptService {
         createdAt: guestRecord.createdAt,
         updatedAt: guestRecord.updatedAt,
         signedUrl: guestRecord.dataUrl,
+        items: guestRecord.items,
+        subtotalMinor: guestRecord.subtotalMinor,
+        taxMinor: guestRecord.taxMinor,
+        discountMinor: guestRecord.discountMinor,
+        tipMinor: guestRecord.tipMinor,
+        serviceChargeMinor: guestRecord.serviceChargeMinor,
+        totalMinor: guestRecord.totalMinor,
       };
     }
 
@@ -162,13 +189,64 @@ class ReceiptService {
       return null;
     }
 
-    if (!data) return null;
+    // Attempt to load items.json from storage
+    let itemsPayload: any = null;
+    if (data?.uploaded_by) {
+      try {
+        const itemsPath = `${data.uploaded_by}/${data.expense_id}/items.json`;
+        const { data: fileBlob } = await supabase.storage.from(STORAGE_BUCKET).download(itemsPath);
+        if (fileBlob) {
+          itemsPayload = JSON.parse(await fileBlob.text());
+        }
+      } catch {
+        // File might not exist
+      }
+    }
+
+    if (!data) {
+      // Check if items.json exists for the current user
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          const itemsPath = `${user.id}/${expenseId}/items.json`;
+          const { data: fileBlob } = await supabase.storage.from(STORAGE_BUCKET).download(itemsPath);
+          if (fileBlob) {
+            const parsed = JSON.parse(await fileBlob.text());
+            return {
+              id: `items_${expenseId}`,
+              expenseId,
+              storagePath: null,
+              uploadedBy: user.id,
+              originalFilename: 'items.json',
+              contentType: 'application/json',
+              fileSize: 0,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              items: parsed.items,
+              subtotalMinor: parsed.subtotalMinor,
+              taxMinor: parsed.taxMinor,
+              discountMinor: parsed.discountMinor,
+              tipMinor: parsed.tipMinor,
+              serviceChargeMinor: parsed.serviceChargeMinor,
+              totalMinor: parsed.totalMinor,
+            };
+          }
+        }
+      } catch {
+        // Not found
+      }
+      return null;
+    }
 
     let signedUrl: string | undefined;
-    try {
-      signedUrl = await this.getReceiptSignedUrl(data.storage_path);
-    } catch (err) {
-      console.warn('Failed to obtain signed URL for receipt:', err);
+    if (data.storage_path) {
+      try {
+        signedUrl = await this.getReceiptSignedUrl(data.storage_path);
+      } catch (err) {
+        console.warn('Failed to obtain signed URL for receipt:', err);
+      }
     }
 
     return {
@@ -182,7 +260,74 @@ class ReceiptService {
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       signedUrl,
+      items: itemsPayload?.items,
+      subtotalMinor: itemsPayload?.subtotalMinor,
+      taxMinor: itemsPayload?.taxMinor,
+      discountMinor: itemsPayload?.discountMinor,
+      tipMinor: itemsPayload?.tipMinor,
+      serviceChargeMinor: itemsPayload?.serviceChargeMinor,
+      totalMinor: itemsPayload?.totalMinor,
     };
+  }
+
+  /**
+   * Saves structured receipt items, taxes, and breakdown associated with an expense.
+   */
+  async saveReceiptItems(input: SaveReceiptItemsInput): Promise<void> {
+    const {
+      expenseId,
+      items,
+      subtotalMinor,
+      taxMinor = 0,
+      discountMinor = 0,
+      tipMinor = 0,
+      serviceChargeMinor = 0,
+      totalMinor,
+      currency,
+    } = input;
+
+    if (!expenseId) {
+      throw new Error('Expense ID is required to save receipt items.');
+    }
+
+    const dataPayload = {
+      items,
+      subtotalMinor: subtotalMinor ?? items.reduce((sum, it) => sum + it.lineTotalMinor, 0),
+      taxMinor,
+      discountMinor,
+      tipMinor,
+      serviceChargeMinor,
+      totalMinor,
+      currency,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (guestStore.isGuestMode()) {
+      await guestStore.saveReceiptItems(expenseId, dataPayload);
+      return;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      throw new Error('You must be signed in to save receipt items.');
+    }
+
+    const jsonBlob = new Blob([JSON.stringify(dataPayload, null, 2)], {
+      type: 'application/json',
+    });
+    const itemsPath = `${user.id}/${expenseId}/items.json`;
+
+    try {
+      await supabase.storage.from(STORAGE_BUCKET).upload(itemsPath, jsonBlob, {
+        contentType: 'application/json',
+        upsert: true,
+      });
+    } catch (err) {
+      console.warn('Failed to upload items.json:', err);
+    }
   }
 
   /**
@@ -213,7 +358,7 @@ class ReceiptService {
    */
   async deleteReceiptAttachment(
     receiptId: string,
-    storagePath: string
+    storagePath?: string | null
   ): Promise<void> {
     if (guestStore.isGuestMode()) {
       await guestStore.deleteReceipt(receiptId);
@@ -230,11 +375,13 @@ class ReceiptService {
       throw new Error(`Failed to delete receipt record: ${dbError.message}`);
     }
 
-    // Delete storage object
-    try {
-      await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
-    } catch (err) {
-      console.warn('Failed to remove storage object after DB delete:', err);
+    // Delete storage object if present
+    if (storagePath) {
+      try {
+        await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+      } catch (err) {
+        console.warn('Failed to remove storage object after DB delete:', err);
+      }
     }
   }
 }

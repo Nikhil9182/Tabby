@@ -20,8 +20,17 @@ import {
   Camera,
   Sparkles,
   X,
+  ReceiptText,
 } from 'lucide-react';
 import { ReceiptScannerDialog } from '@/components/receipts/receipt-scanner-dialog';
+import {
+  ReceiptItemsEditor,
+  type ReceiptItemRowState,
+  type ReceiptItemsEditorState,
+} from '@/components/receipts/receipt-items-editor';
+import { extractReceiptItems } from '@/domain/receipts/receipt-item-parser';
+import { calculateReceiptSplit } from '@/domain/receipts/receipt-split-calculator';
+import { generateId } from '@/lib/id';
 import { compressImageForStorage } from '@/services/image/image-compression';
 import { receiptService } from '@/services/receipts/receipt-service';
 import { Button } from '@/components/ui/button';
@@ -52,6 +61,7 @@ import {
   useCategories,
   useCurrency,
   useFriends,
+  useReceipt,
 } from '@/hooks';
 import {
   toMajorUnits,
@@ -129,6 +139,14 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
 
   const queryScan = searchParams.get('scan') === 'true' || searchParams.get('scan') === '1';
   const [isScannerOpen, setIsScannerOpen] = useState(queryScan);
+
+  // Receipt data & structured itemization
+  const { receipt, saveReceiptItems } = useReceipt(expenseId || '');
+  const [hasReceiptItems, setHasReceiptItems] = useState(false);
+  const [receiptItems, setReceiptItems] = useState<ReceiptItemRowState[]>([]);
+  const [receiptTaxStr, setReceiptTaxStr] = useState('0');
+  const [receiptDiscountStr, setReceiptDiscountStr] = useState('0');
+  const [receiptTipStr, setReceiptTipStr] = useState('0');
 
   // Optional manual receipt attachment
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -441,6 +459,43 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       }
 
       const curr = existingExpense.originalCurrency || defaultCurrency;
+
+      // Extract receipt items from receipt store or legacy notes
+      const parsedFromNotes = extractReceiptItems(existingExpense.notes, curr);
+      const itemsSource =
+        receipt?.items && receipt.items.length > 0
+          ? receipt.items
+          : parsedFromNotes.hasItems
+          ? parsedFromNotes.items
+          : null;
+
+      let cleanNotes = existingExpense.notes || '';
+      if (itemsSource && itemsSource.length > 0) {
+        setHasReceiptItems(true);
+        setReceiptItems(
+          itemsSource.map((it) => ({
+            id: it.id || generateId(),
+            name: it.name,
+            quantity: it.quantity,
+            lineTotalStr: toMajorUnits(it.lineTotalMinor, curr).toString(),
+            assignedUserIds:
+              it.assignedUserIds && it.assignedUserIds.length > 0
+                ? it.assignedUserIds
+                : existingExpense.participants || [currentUserId],
+          }))
+        );
+        const taxMinor = receipt?.taxMinor ?? parsedFromNotes.taxMinor ?? 0;
+        const discountMinor = receipt?.discountMinor ?? parsedFromNotes.discountMinor ?? 0;
+        const tipMinor = receipt?.tipMinor ?? parsedFromNotes.tipMinor ?? 0;
+
+        setReceiptTaxStr(taxMinor > 0 ? toMajorUnits(taxMinor, curr).toString() : '0');
+        setReceiptDiscountStr(discountMinor > 0 ? toMajorUnits(discountMinor, curr).toString() : '0');
+        setReceiptTipStr(tipMinor > 0 ? toMajorUnits(tipMinor, curr).toString() : '0');
+
+        // Clean user notes (exclude raw items text)
+        cleanNotes = parsedFromNotes.userNotes || '';
+      }
+
       reset({
         description: existingExpense.description,
         amount: toMajorUnits(existingExpense.originalAmountMinor, curr).toString(),
@@ -449,7 +504,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         groupId: existingExpense.groupId || 'personal',
         categoryId: existingExpense.categoryId || '',
         paidBy: existingExpense.paidBy,
-        notes: existingExpense.notes || '',
+        notes: cleanNotes,
       });
 
       setSplitType(existingExpense.splitType || 'equal');
@@ -475,7 +530,95 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
         setShares(shareMap);
       }
     }
-  }, [isEditing, existingExpense, existingSplits, defaultCurrency, reset]);
+  }, [isEditing, existingExpense, existingSplits, defaultCurrency, reset, receipt, currentUserId]);
+
+  // Catch receipt items if receipt query resolves after initial expense load
+  useEffect(() => {
+    if (isEditing && receipt?.items && receipt.items.length > 0 && receiptItems.length === 0) {
+      const curr = existingExpense?.originalCurrency || defaultCurrency;
+      setHasReceiptItems(true);
+      setReceiptItems(
+        receipt.items.map((it) => ({
+          id: it.id || generateId(),
+          name: it.name,
+          quantity: it.quantity,
+          lineTotalStr: toMajorUnits(it.lineTotalMinor, curr).toString(),
+          assignedUserIds:
+            it.assignedUserIds && it.assignedUserIds.length > 0
+              ? it.assignedUserIds
+              : existingExpense?.participants || [currentUserId],
+        }))
+      );
+      if (receipt.taxMinor) setReceiptTaxStr(toMajorUnits(receipt.taxMinor, curr).toString());
+      if (receipt.discountMinor) setReceiptDiscountStr(toMajorUnits(receipt.discountMinor, curr).toString());
+      if (receipt.tipMinor) setReceiptTipStr(toMajorUnits(receipt.tipMinor, curr).toString());
+    }
+  }, [isEditing, receipt, existingExpense, defaultCurrency, receiptItems.length, currentUserId]);
+
+  // Handle changes in the itemized receipt editor
+  const handleReceiptEditorChange = (updated: ReceiptItemsEditorState) => {
+    setReceiptItems(updated.items);
+    setReceiptTaxStr(updated.taxStr);
+    setReceiptDiscountStr(updated.discountStr);
+    setReceiptTipStr(updated.tipStr);
+
+    let subtotal = 0;
+    const convertedItems = updated.items.map((it) => {
+      const lineMinor = parseMoney(it.lineTotalStr || '0', watchedCurrency);
+      subtotal += lineMinor;
+      return {
+        id: it.id,
+        name: it.name,
+        quantity: it.quantity,
+        lineTotalMinor: lineMinor,
+        unitPriceMinor: it.quantity > 1 ? Math.round(lineMinor / it.quantity) : lineMinor,
+        assignedUserIds: it.assignedUserIds,
+      };
+    });
+
+    const taxMinor = parseMoney(updated.taxStr || '0', watchedCurrency);
+    const discountMinor = parseMoney(updated.discountStr || '0', watchedCurrency);
+    const tipMinor = parseMoney(updated.tipStr || '0', watchedCurrency);
+    const newTotalMinor = Math.max(0, subtotal + taxMinor + tipMinor - discountMinor);
+
+    // Sync form total amount
+    setValue('amount', String(toMajorUnits(newTotalMinor, watchedCurrency)), { shouldDirty: true });
+
+    // Recalculate participant shares if split is exact / item-assigned
+    if (selectedParticipants.length > 0) {
+      const assignmentsMap: Record<string, string[]> = {};
+      convertedItems.forEach((it) => {
+        assignmentsMap[it.id] =
+          it.assignedUserIds && it.assignedUserIds.length > 0
+            ? it.assignedUserIds
+            : selectedParticipants;
+      });
+
+      try {
+        const splitRecalc = calculateReceiptSplit({
+          mode: splitType === 'equal' ? 'equal' : 'items',
+          totalMinor: newTotalMinor,
+          items: convertedItems,
+          assignments: assignmentsMap,
+          participantIds: selectedParticipants,
+          taxMinor,
+          discountMinor,
+          tipMinor,
+          currency: watchedCurrency,
+        });
+
+        if (splitType === 'exact') {
+          const newExact: Record<string, string> = {};
+          splitRecalc.shares.forEach((share) => {
+            newExact[share.userId] = toMajorUnits(share.totalShareMinor, watchedCurrency).toString();
+          });
+          setExactAmounts(newExact);
+        }
+      } catch {
+        // Fallback
+      }
+    }
+  };
 
   // Total amount in integer minor units
   const totalAmountMinor = useMemo(() => {
@@ -674,6 +817,38 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
       }
     };
 
+    const saveReceiptItemsIfPresent = async (targetExpenseId: string) => {
+      if (!hasReceiptItems || receiptItems.length === 0 || !targetExpenseId) return;
+      try {
+        const convertedItems = receiptItems.map((it) => {
+          const lineMinor = parseMoney(it.lineTotalStr || '0', data.currency);
+          return {
+            id: it.id,
+            name: it.name,
+            quantity: it.quantity,
+            lineTotalMinor: lineMinor,
+            unitPriceMinor:
+              it.quantity > 1
+                ? Math.round(lineMinor / it.quantity)
+                : lineMinor,
+            assignedUserIds: it.assignedUserIds,
+          };
+        });
+
+        await receiptService.saveReceiptItems({
+          expenseId: targetExpenseId,
+          items: convertedItems,
+          taxMinor: parseMoney(receiptTaxStr || '0', data.currency),
+          discountMinor: parseMoney(receiptDiscountStr || '0', data.currency),
+          tipMinor: parseMoney(receiptTipStr || '0', data.currency),
+          totalMinor: totalAmountMinor,
+          currency: data.currency,
+        });
+      } catch (err) {
+        console.error('Failed to save receipt items:', err);
+      }
+    };
+
     try {
       const expenseDateISO = new Date(data.expenseDate).toISOString();
       const rateSnapshot = await buildRateSnapshot(totalAmountMinor, data.currency, data.expenseDate.slice(0, 10));
@@ -705,6 +880,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             splits: finalSplits,
           });
           await uploadReceiptIfPresent(expenseId);
+          await saveReceiptItemsIfPresent(expenseId);
           navigate(`/friends?friendId=${selectedFriendId}`);
         } else {
           const created = await createExpense({
@@ -728,6 +904,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           });
           if (created?.id) {
             await uploadReceiptIfPresent(created.id);
+            await saveReceiptItemsIfPresent(created.id);
           }
           navigate(`/friends?friendId=${selectedFriendId}`);
         }
@@ -757,6 +934,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             splits: finalSplits,
           });
           await uploadReceiptIfPresent(expenseId);
+          await saveReceiptItemsIfPresent(expenseId);
           navigate(`/groups/${selectedGroupId}`);
         } else {
           const created = await createExpense({
@@ -780,6 +958,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
           });
           if (created?.id) {
             await uploadReceiptIfPresent(created.id);
+            await saveReceiptItemsIfPresent(created.id);
           }
           navigate(`/groups/${selectedGroupId}`);
         }
@@ -1133,7 +1312,7 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
               </label>
               <Textarea
                 {...register('notes')}
-                placeholder="Add receipt details, items breakdown, or notes..."
+                placeholder="Add any remarks or personal notes..."
                 className="resize-none h-20 text-sm"
               />
             </div>
@@ -1201,6 +1380,45 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Receipt Items & Breakdown Editor */}
+        {hasReceiptItems ? (
+          <ReceiptItemsEditor
+            items={receiptItems}
+            taxStr={receiptTaxStr}
+            discountStr={receiptDiscountStr}
+            tipStr={receiptTipStr}
+            currency={watchedCurrency}
+            participants={availableMembers}
+            currentUserId={currentUserId}
+            onChange={handleReceiptEditorChange}
+            onRemoveReceiptSection={() => setHasReceiptItems(false)}
+          />
+        ) : (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setHasReceiptItems(true);
+                setReceiptItems([
+                  {
+                    id: generateId(),
+                    name: '',
+                    quantity: 1,
+                    lineTotalStr: watchedAmountStr || '',
+                    assignedUserIds: selectedParticipants,
+                  },
+                ]);
+              }}
+              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-8"
+            >
+              <ReceiptText className="h-3.5 w-3.5" />
+              <span>Add Itemized Receipt Items</span>
+            </Button>
+          </div>
+        )}
 
         {/* Split Details Card */}
         <Card className="border-border/60 shadow-xs">

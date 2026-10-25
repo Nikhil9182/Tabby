@@ -111,6 +111,13 @@ export interface GuestReceiptRecord {
   dataUrl?: string;
   createdAt: string;
   updatedAt: string;
+  items?: any[];
+  subtotalMinor?: number;
+  taxMinor?: number;
+  discountMinor?: number;
+  tipMinor?: number;
+  serviceChargeMinor?: number;
+  totalMinor?: number;
 }
 
 export interface GuestDataSummary {
@@ -994,6 +1001,59 @@ class GuestStore {
   async getReceiptForExpense(expenseId: string): Promise<GuestReceiptRecord | null> {
     const all = await getAllRecords<GuestReceiptRecord>(STORES.RECEIPTS);
     return all.find((r) => r.expenseId === expenseId) || null;
+  }
+
+  async saveReceiptItems(
+    expenseId: string,
+    data: {
+      items: any[];
+      subtotalMinor?: number;
+      taxMinor?: number;
+      discountMinor?: number;
+      tipMinor?: number;
+      serviceChargeMinor?: number;
+      totalMinor?: number;
+      currency?: string;
+    }
+  ): Promise<GuestReceiptRecord> {
+    const existing = await this.getReceiptForExpense(expenseId);
+    const guestId = this.getGuestUserId();
+    const now = new Date().toISOString();
+
+    if (existing) {
+      existing.items = data.items;
+      existing.subtotalMinor = data.subtotalMinor;
+      existing.taxMinor = data.taxMinor;
+      existing.discountMinor = data.discountMinor;
+      existing.tipMinor = data.tipMinor;
+      existing.serviceChargeMinor = data.serviceChargeMinor;
+      existing.totalMinor = data.totalMinor;
+      existing.updatedAt = now;
+      await putRecord(STORES.RECEIPTS, existing);
+      return existing;
+    }
+
+    const id = uuidv4();
+    const newRecord: GuestReceiptRecord = {
+      id,
+      expenseId,
+      storagePath: `guest/${guestId}/${expenseId}/${id}.jpg`,
+      uploadedBy: guestId,
+      originalFilename: 'receipt_items.json',
+      contentType: 'application/json',
+      fileSize: 0,
+      createdAt: now,
+      updatedAt: now,
+      items: data.items,
+      subtotalMinor: data.subtotalMinor,
+      taxMinor: data.taxMinor,
+      discountMinor: data.discountMinor,
+      tipMinor: data.tipMinor,
+      serviceChargeMinor: data.serviceChargeMinor,
+      totalMinor: data.totalMinor,
+    };
+    await putRecord(STORES.RECEIPTS, newRecord);
+    return newRecord;
   }
 
   async deleteReceipt(id: string): Promise<void> {

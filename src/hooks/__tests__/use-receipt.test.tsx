@@ -11,6 +11,7 @@ vi.mock('@/services/receipts/receipt-service', () => ({
     getReceiptSignedUrl: vi.fn(),
     uploadReceiptAttachment: vi.fn(),
     deleteReceiptAttachment: vi.fn(),
+    saveReceiptItems: vi.fn(),
   },
 }));
 
@@ -124,5 +125,24 @@ describe('useReceipt hook', () => {
       'rec_300',
       'user1/exp_300/rec_300.jpg'
     );
+  });
+
+  it('handles saving receipt items', async () => {
+    vi.mocked(receiptService.saveReceiptItems).mockResolvedValue();
+
+    const { result } = renderHook(() => useReceipt('exp_400'), { wrapper });
+
+    await act(async () => {
+      await result.current.saveReceiptItems({
+        items: [{ name: 'Salad', quantity: 1, lineTotalMinor: 25000 }],
+        currency: 'INR',
+      });
+    });
+
+    expect(receiptService.saveReceiptItems).toHaveBeenCalledWith({
+      expenseId: 'exp_400',
+      items: [{ name: 'Salad', quantity: 1, lineTotalMinor: 25000 }],
+      currency: 'INR',
+    });
   });
 });

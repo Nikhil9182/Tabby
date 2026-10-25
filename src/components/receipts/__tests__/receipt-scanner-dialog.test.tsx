@@ -33,6 +33,7 @@ vi.mock('@/services/image/image-compression', () => ({
 vi.mock('@/services/receipts/receipt-service', () => ({
   receiptService: {
     uploadReceiptAttachment: vi.fn().mockResolvedValue({ id: 'rec_1', storagePath: 'test/path.jpg' }),
+    saveReceiptItems: vi.fn().mockResolvedValue(undefined),
     getReceiptForExpense: vi.fn(),
     getReceiptSignedUrl: vi.fn(),
     deleteReceiptAttachment: vi.fn(),

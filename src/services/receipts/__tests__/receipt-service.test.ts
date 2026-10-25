@@ -114,11 +114,46 @@ describe('ReceiptService', () => {
       await receiptService.deleteReceiptAttachment('guest_rec_1', uploaded.storagePath);
       expect(guestStore.deleteReceipt).toHaveBeenCalledWith('guest_rec_1');
     });
+
+    it('saves receipt items in guest store', async () => {
+      vi.spyOn(guestStore, 'saveReceiptItems').mockResolvedValue({
+        id: 'guest_rec_items',
+        expenseId: 'exp_g2',
+        storagePath: 'guest/user/exp_g2/items.jpg',
+        uploadedBy: 'guest_user',
+        contentType: 'application/json',
+        fileSize: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        items: [{ name: 'Pizza', quantity: 1, lineTotalMinor: 50000 }],
+      });
+
+      await receiptService.saveReceiptItems({
+        expenseId: 'exp_g2',
+        items: [{ name: 'Pizza', quantity: 1, lineTotalMinor: 50000 }],
+        currency: 'INR',
+      });
+
+      expect(guestStore.saveReceiptItems).toHaveBeenCalledWith('exp_g2', expect.objectContaining({
+        items: [{ name: 'Pizza', quantity: 1, lineTotalMinor: 50000 }],
+      }));
+    });
   });
 
   describe('Cloud Authenticated Mode', () => {
     beforeEach(() => {
       vi.spyOn(guestStore, 'isGuestMode').mockReturnValue(false);
+    });
+
+    it('saves receipt items to cloud storage as json payload', async () => {
+      await receiptService.saveReceiptItems({
+        expenseId: 'exp_123',
+        items: [{ name: 'Biryani', quantity: 1, lineTotalMinor: 40000 }],
+        taxMinor: 2000,
+        currency: 'INR',
+      });
+
+      expect(supabase.storage.from).toHaveBeenCalledWith('receipts');
     });
 
     it('uploads receipt to storage and registers record in expense_receipts', async () => {
