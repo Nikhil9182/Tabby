@@ -13,6 +13,7 @@ import { ReceiptReviewEditor } from './receipt-review-editor';
 import { ReceiptSplitAssigner, type ParticipantOption } from './receipt-split-assigner';
 import { ocrService } from '@/services/ocr/ocr-service';
 import { parseReceipt } from '@/domain/receipts/receipt-parser';
+import { formatReceiptNotes, type ParsedExpenseItem } from '@/domain/receipts/receipt-item-parser';
 import { currencyService } from '@/services/currency/currency-service';
 import { useExpenses } from '@/hooks/use-expenses';
 import { toMajorUnits, formatMoney } from '@/domain/money/money';
@@ -198,17 +199,38 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         ? `${parsedReceipt.merchantName} (Receipt)`
         : 'Scanned Receipt Expense';
 
-      // Build notes with detected item breakdown
-      const itemNotes = parsedReceipt.items
-        .map((it) => `${it.quantity > 1 ? `${it.quantity}x ` : ''}${it.name}: ${formatMoney(it.lineTotalMinor, receiptCurrency)}`)
-        .join(', ');
+      // Map item assignments to each item if available
+      const itemAssignmentsMap: Record<string, string[]> = {};
+      if (splitResult.mode === 'items') {
+        splitResult.shares.forEach((share) => {
+          share.assignedItemIds?.forEach((itemId) => {
+            if (!itemAssignmentsMap[itemId]) {
+              itemAssignmentsMap[itemId] = [];
+            }
+            itemAssignmentsMap[itemId].push(share.userId);
+          });
+        });
+      }
 
-      const notes = [
-        itemNotes ? `Items: ${itemNotes}` : '',
-        parsedReceipt.taxMinor > 0 ? `Tax: ${formatMoney(parsedReceipt.taxMinor, receiptCurrency)}` : '',
-        parsedReceipt.discountMinor > 0 ? `Discount: ${formatMoney(parsedReceipt.discountMinor, receiptCurrency)}` : '',
-        parsedReceipt.tipMinor > 0 ? `Tip: ${formatMoney(parsedReceipt.tipMinor, receiptCurrency)}` : '',
-      ].filter(Boolean).join(' | ');
+      const itemsPayload: ParsedExpenseItem[] = parsedReceipt.items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        quantity: it.quantity,
+        lineTotalMinor: it.lineTotalMinor,
+        unitPriceMinor: it.unitPriceMinor ?? undefined,
+        assignedUserIds: itemAssignmentsMap[it.id],
+      }));
+
+      const notes = formatReceiptNotes({
+        items: itemsPayload,
+        taxMinor: parsedReceipt.taxMinor,
+        discountMinor: parsedReceipt.discountMinor,
+        tipMinor: parsedReceipt.tipMinor,
+        serviceChargeMinor: parsedReceipt.serviceChargeMinor,
+        subtotalMinor: parsedReceipt.itemSubtotalMinor,
+        totalMinor: totalAmountMinor,
+        currency: receiptCurrency,
+      });
 
       const rateSnapshot = await buildRateSnapshot(totalAmountMinor, receiptCurrency, expenseDate);
 

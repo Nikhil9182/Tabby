@@ -43,6 +43,8 @@ import { formatDate } from '@/lib/date';
 import { formatMoney } from '@/domain/money/money';
 import { ReceiptViewerModal } from '@/components/receipts/receipt-viewer-modal';
 import { compressImageForStorage } from '@/services/image/image-compression';
+import { ReceiptItemsList } from '@/components/receipts/receipt-items-list';
+import { extractReceiptItems } from '@/domain/receipts/receipt-item-parser';
 
 export function ExpenseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -159,6 +161,10 @@ export function ExpenseDetailPage() {
     expense.reportingAmountMinor !== undefined &&
     !!expense.exchangeRate &&
     !['identity', 'unavailable'].includes(expense.exchangeRateSource || 'identity');
+
+  const receiptItemsData = useMemo(() => {
+    return extractReceiptItems(expense?.notes, expense?.originalCurrency);
+  }, [expense?.notes, expense?.originalCurrency]);
 
   const handleDelete = async () => {
     try {
@@ -304,15 +310,31 @@ export function ExpenseDetailPage() {
             </div>
           </div>
 
-          {/* Notes if available */}
-          {expense.notes && (
+          {/* Itemized Receipt Items (if parsed/detected from receipt) */}
+          {receiptItemsData.hasItems && (
+            <ReceiptItemsList
+              items={receiptItemsData.items}
+              currency={expense.originalCurrency}
+              subtotalMinor={receiptItemsData.subtotalMinor}
+              taxMinor={receiptItemsData.taxMinor}
+              discountMinor={receiptItemsData.discountMinor}
+              tipMinor={receiptItemsData.tipMinor}
+              serviceChargeMinor={receiptItemsData.serviceChargeMinor}
+              totalMinor={receiptItemsData.totalMinor}
+              users={users}
+              currentUserId={currentUserId}
+            />
+          )}
+
+          {/* User Notes if available (excluding receipt raw breakdown) */}
+          {receiptItemsData.userNotes && (
             <div className="space-y-1.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
                 <span>Notes & Remarks</span>
               </span>
               <p className="text-sm text-foreground bg-muted/20 p-3.5 rounded-lg border border-border/40 whitespace-pre-wrap">
-                {expense.notes}
+                {receiptItemsData.userNotes}
               </p>
             </div>
           )}
