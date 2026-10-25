@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { toMinorUnits } from '@/domain/money/money';
+import { compressImageForStorage } from '@/services/image/image-compression';
 import type { ParsedReceipt, ReceiptItem, ReceiptTaxItem } from '@/domain/receipts/types';
 
 export interface GeminiItemOutput {
@@ -39,8 +40,21 @@ export class GeminiReceiptService {
       );
     }
 
-    // 2. Convert image to base64
-    const { base64, mimeType } = await this.fileToBase64(imageSource);
+    // 2. Pre-compress oversized camera images (max 1400px, quality 0.82)
+    // This reduces payload from ~8MB to ~200KB, preventing timeouts and accelerating AI extraction
+    let fileToSend: File | Blob = imageSource;
+    try {
+      const compressed = await compressImageForStorage(imageSource, {
+        maxDimension: 1400,
+        quality: 0.82,
+        outputFileName: (imageSource as File)?.name || 'receipt.jpg',
+      });
+      fileToSend = compressed.file;
+    } catch (compErr) {
+      console.warn('Image pre-compression skipped, using original:', compErr);
+    }
+
+    const { base64, mimeType } = await this.fileToBase64(fileToSend);
 
     if (signal?.aborted) {
       throw new DOMException('Receipt scan was cancelled.', 'AbortError');

@@ -258,7 +258,7 @@ Rules:
 
     for (const targetModel of uniqueModels) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
       try {
@@ -320,10 +320,9 @@ Rules:
       } catch (fetchErr: any) {
         clearTimeout(timeoutId);
         if (fetchErr?.name === "AbortError") {
-          return new Response(
-            JSON.stringify({ error: "Vision API request timed out after 60 seconds." }),
-            { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+          console.warn(`Model ${targetModel} timed out after 15s. Trying next candidate...`);
+          lastError = `Model ${targetModel} timed out after 15s`;
+          continue;
         }
         lastError = fetchErr?.message || "Network error connecting to Vision API";
       }
@@ -331,8 +330,8 @@ Rules:
 
     if (!geminiJson) {
       return new Response(
-        JSON.stringify({ error: `AI Vision processing error: ${lastError}` }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: `AI Vision is temporarily unavailable or busy: ${lastError}` }),
+        { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
     const textOutput = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
