@@ -281,9 +281,9 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
                   <div className="p-3.5 space-y-3">
                     {/* Item row info */}
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-foreground">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-foreground break-words">
                             {item.quantity > 1 && `${item.quantity}x `}
                             {item.name}
                           </span>
@@ -305,35 +305,37 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
                       </span>
                     </div>
 
-                    {/* Participant selector pills */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {participants.map((p) => {
-                        const isAssigned = assignedUserIds.includes(p.id);
+                    {/* Participant selector pills and quick actions */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-border/40">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {participants.map((p) => {
+                          const isAssigned = assignedUserIds.includes(p.id);
 
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => toggleItemParticipant(item.id, p.id)}
-                            className={cn(
-                              'px-2.5 py-1 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5',
-                              isAssigned
-                                ? 'bg-primary text-primary-foreground border-primary shadow-2xs'
-                                : 'bg-muted/30 text-muted-foreground hover:bg-muted/60 border-border/60'
-                            )}
-                          >
-                            <span>{p.name.split(' ')[0]}</span>
-                            {isAssigned && <CheckCircle2 className="h-3 w-3" />}
-                          </button>
-                        );
-                      })}
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => toggleItemParticipant(item.id, p.id)}
+                              className={cn(
+                                'px-2.5 py-1 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5 cursor-pointer',
+                                isAssigned
+                                  ? 'bg-primary text-primary-foreground border-primary shadow-2xs'
+                                  : 'bg-muted/30 text-muted-foreground hover:bg-muted/60 border-border/60'
+                              )}
+                            >
+                              <span>{p.name.split(' ')[0]}</span>
+                              {isAssigned && <CheckCircle2 className="h-3 w-3" />}
+                            </button>
+                          );
+                        })}
+                      </div>
 
                       {/* Quick assignment helpers */}
-                      <div className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground self-end sm:self-auto shrink-0">
                         <button
                           type="button"
                           onClick={() => assignItemToAll(item.id)}
-                          className="hover:underline px-1"
+                          className="hover:underline px-1 hover:text-foreground cursor-pointer"
                         >
                           All
                         </button>
@@ -341,7 +343,7 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
                         <button
                           type="button"
                           onClick={() => assignItemToOnlyMe(item.id)}
-                          className="hover:underline px-1"
+                          className="hover:underline px-1 hover:text-foreground cursor-pointer"
                         >
                           Only Me
                         </button>
@@ -351,7 +353,7 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
                             <button
                               type="button"
                               onClick={() => clearItemAssignments(item.id)}
-                              className="hover:underline px-1 text-rose-500"
+                              className="hover:underline px-1 text-rose-500 cursor-pointer"
                             >
                               Clear
                             </button>
@@ -377,7 +379,7 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
         </CardHeader>
 
         <CardContent className="p-4 sm:p-5 pt-1 space-y-2.5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {splitResult.shares.map((share) => {
               const p = participants.find((u) => u.id === share.userId);
               const name = p ? p.name : share.userId;
@@ -388,16 +390,16 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
                   className="p-3 rounded-xl border border-border/80 bg-card shadow-2xs space-y-1"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-foreground">
+                    <span className="text-xs font-semibold text-foreground truncate pr-2">
                       {name} {share.userId === currentUserId && '(You)'}
                     </span>
-                    <span className="font-bold text-sm font-mono text-primary">
+                    <span className="font-bold text-sm font-mono text-primary shrink-0">
                       {formatMoney(share.totalShareMinor, currency)}
                     </span>
                   </div>
 
                   {splitMode === 'items' && (
-                    <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground pt-0.5">
+                    <div className="flex flex-wrap gap-x-2 text-[11px] text-muted-foreground pt-0.5">
                       <span>Items: {formatMoney(share.assignedItemsSubtotalMinor, currency)}</span>
                       {share.taxShareMinor > 0 && (
                         <span>+Tax: {formatMoney(share.taxShareMinor, currency)}</span>
@@ -433,8 +435,15 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
       </Card>
 
       {/* Navigation and Confirmation Footer */}
-      <div className="flex items-center justify-between pt-2">
-        <Button type="button" variant="outline" size="sm" onClick={onBack} disabled={isSaving}>
+      <div className="flex items-center justify-between gap-3 pt-3 border-t border-border/60 sticky bottom-0 bg-background/95 backdrop-blur-md pb-1 z-10">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onBack}
+          disabled={isSaving}
+          className="rounded-xl"
+        >
           Back to Review
         </Button>
 
@@ -444,7 +453,7 @@ export const ReceiptSplitAssigner: React.FC<ReceiptSplitAssignerProps> = ({
           size="sm"
           onClick={() => onConfirm(splitResult)}
           disabled={!canConfirm || isSaving}
-          className="font-semibold min-w-[130px]"
+          className="font-bold rounded-xl shadow-xs min-w-[140px]"
         >
           {isSaving ? 'Saving Expense...' : 'Save Scanned Expense'}
         </Button>

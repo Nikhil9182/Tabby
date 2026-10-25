@@ -298,6 +298,8 @@ export function parseItemCandidate(
     if (q > 0 && q <= 99) {
       quantity = q;
       itemName = leadingQtyMatch[2].trim();
+      // Remove any residual duplicate leading digits (e.g. OCR artifacts like "1 1 CARBONARA")
+      itemName = itemName.replace(/^\d{1,2}\s+/, '').trim();
     }
   }
 
@@ -517,8 +519,11 @@ export function parseReceipt(
     if (extractCandidateAmounts(text, detectedCurrency).length > 0) continue;
     if (DATE_RE.test(text) || TIME_RE.test(text)) continue;
 
-    // Filter out common receipt header labels
+    // Filter out common receipt header labels and customer name fields
     if (/^(?:tax\s*invoice|receipt|cash\s*bill|bill\s*of\s*supply|retail\s*invoice|welcome)$/i.test(text)) {
+      continue;
+    }
+    if (/^\s*(?:name|customer|guest|table|server|waiter|check|creck|order)\b/i.test(text)) {
       continue;
     }
 

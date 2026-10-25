@@ -285,117 +285,117 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 rounded-2xl">
-        <DialogHeader className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <Sparkles className="h-4 w-4" />
+      <DialogContent className="flex flex-col gap-0 p-0 w-full max-w-[calc(100vw-1.5rem)] sm:max-w-3xl lg:max-w-4xl max-h-[92dvh] h-[92dvh] sm:h-auto sm:max-h-[88vh] overflow-hidden rounded-2xl sm:rounded-3xl border-border/80 shadow-2xl">
+        <DialogHeader className="p-4 sm:p-5 border-b border-border/60 shrink-0 space-y-3 bg-muted/10">
+          <div className="flex items-center gap-3 pr-8">
+            <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <DialogTitle className="text-lg">
+              <DialogTitle className="text-base sm:text-lg font-bold">
                 {step === 'upload' && 'Scan Receipt'}
                 {step === 'review' && 'Review Scanned Receipt'}
                 {step === 'split' && 'Split Bill'}
               </DialogTitle>
-              <DialogDescription className="text-xs">
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 {step === 'upload' && 'Upload or take a photo of your receipt to automatically parse items and prices.'}
                 {step === 'review' && 'Verify the extracted store name, prices, and taxes.'}
                 {step === 'split' && 'Choose equal splitting or assign dishes to specific people.'}
               </DialogDescription>
             </div>
           </div>
+
+          {/* Step indicator */}
+          <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  step === 'upload'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                1
+              </span>
+              <span className={step === 'upload' ? 'font-semibold text-foreground' : ''}>Upload</span>
+            </div>
+
+            <span className="text-border">⎯⎯</span>
+
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  step === 'review'
+                    ? 'bg-primary text-primary-foreground'
+                    : parsedReceipt
+                    ? 'bg-muted text-foreground'
+                    : 'bg-muted/40 text-muted-foreground'
+                }`}
+              >
+                2
+              </span>
+              <span className={step === 'review' ? 'font-semibold text-foreground' : ''}>Review</span>
+            </div>
+
+            <span className="text-border">⎯⎯</span>
+
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  step === 'split'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/40 text-muted-foreground'
+                }`}
+              >
+                3
+              </span>
+              <span className={step === 'split' ? 'font-semibold text-foreground' : ''}>Split</span>
+            </div>
+          </div>
         </DialogHeader>
 
-        {/* Step indicator */}
-        <div className="flex items-center justify-between px-2 py-2 border-b border-border/60 text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                step === 'upload'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-foreground'
-              }`}
-            >
-              1
-            </span>
-            <span className={step === 'upload' ? 'font-semibold text-foreground' : ''}>Upload</span>
-          </div>
-
-          <span className="text-border">⎯⎯</span>
-
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                step === 'review'
-                  ? 'bg-primary text-primary-foreground'
-                  : parsedReceipt
-                  ? 'bg-muted text-foreground'
-                  : 'bg-muted/40 text-muted-foreground'
-              }`}
-            >
-              2
-            </span>
-            <span className={step === 'review' ? 'font-semibold text-foreground' : ''}>Review</span>
-          </div>
-
-          <span className="text-border">⎯⎯</span>
-
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                step === 'split'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted/40 text-muted-foreground'
-              }`}
-            >
-              3
-            </span>
-            <span className={step === 'split' ? 'font-semibold text-foreground' : ''}>Split</span>
-          </div>
-        </div>
-
-        {/* Step 1: Upload & OCR */}
-        {step === 'upload' && (
-          <ReceiptImageUploader
-            onImageSelected={handleImageSelected}
-            isProcessing={isProcessing}
-            progress={ocrProgress}
-            error={ocrError}
-            onCancel={handleCancelOcr}
-            onRetry={handleRetryOcr}
-          />
-        )}
-
-        {/* Step 2: Review & Edit */}
-        {step === 'review' && parsedReceipt && (
-          <ReceiptReviewEditor
-            receipt={parsedReceipt}
-            onChange={(updated) => setParsedReceipt(updated)}
-            onProceed={() => setStep('split')}
-            onBack={() => setStep('upload')}
-          />
-        )}
-
-        {/* Step 3: Split Assigner */}
-        {step === 'split' && parsedReceipt && (
-          <div className="space-y-4">
-            <ReceiptSplitAssigner
-              receipt={parsedReceipt}
-              participants={participants}
-              currentUserId={currentUserId}
-              onConfirm={handleConfirmAndSave}
-              onBack={() => setStep('review')}
-              isSaving={isSaving || isCreating}
+        {/* Scrollable body with no horizontal overflow */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 overscroll-contain">
+          {step === 'upload' && (
+            <ReceiptImageUploader
+              onImageSelected={handleImageSelected}
+              isProcessing={isProcessing}
+              progress={ocrProgress}
+              error={ocrError}
+              onCancel={handleCancelOcr}
+              onRetry={handleRetryOcr}
             />
+          )}
 
-            {saveError && (
-              <div className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{saveError}</span>
-              </div>
-            )}
-          </div>
-        )}
+          {step === 'review' && parsedReceipt && (
+            <ReceiptReviewEditor
+              receipt={parsedReceipt}
+              onChange={(updated) => setParsedReceipt(updated)}
+              onProceed={() => setStep('split')}
+              onBack={() => setStep('upload')}
+            />
+          )}
+
+          {step === 'split' && parsedReceipt && (
+            <div className="space-y-4">
+              <ReceiptSplitAssigner
+                receipt={parsedReceipt}
+                participants={participants}
+                currentUserId={currentUserId}
+                onConfirm={handleConfirmAndSave}
+                onBack={() => setStep('review')}
+                isSaving={isSaving || isCreating}
+              />
+
+              {saveError && (
+                <div className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{saveError}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
