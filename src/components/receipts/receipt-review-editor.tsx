@@ -323,6 +323,27 @@ export const ReceiptReviewEditor: React.FC<ReceiptReviewEditorProps> = ({
                     {totalDiscrepancyMinor > 0 ? '+' : ''}
                     {formatMoney(totalDiscrepancyMinor, currency)} difference
                   </span>
+                  {totalDiscrepancyMinor < 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={() =>
+                        handleDiscountChange(
+                          String(
+                            toMajorUnits(
+                              (receipt.discountMinor || 0) + Math.abs(totalDiscrepancyMinor),
+                              currency
+                            )
+                          )
+                        )
+                      }
+                      className="h-7 text-xs gap-1.5 font-semibold border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      <span>Set as Discount (-{formatMoney(Math.abs(totalDiscrepancyMinor), currency)})</span>
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="outline"

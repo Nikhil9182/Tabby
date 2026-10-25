@@ -29,7 +29,7 @@ const GRAND_TOTAL_RE = /\b(?:grand\s*total|net\s*payable|net\s*amount|amount\s*d
 const TOTAL_RE = /\b(?:total|amount|tot)\b/i;
 const SUBTOTAL_RE = /\b(?:sub\s*total|subtotal|sub-total|s[u3b]b?\s*total|item\s*total|food\s*total|gross\s*amount|gross\s*total)\b/i;
 const TAX_RE = /\b(cgst|sgst|igst|gst|vat|sales\s*tax|service\s*tax|s\.?\s*tax|tax)\b/i;
-const DISCOUNT_RE = /\b(?:discount|disc|promo|coupon|offer|voucher|special\s*discount|comp|birthday\s*comp)\b/i;
+const DISCOUNT_RE = /\b(?:discounts?|disc\.?|promo(?:tion)?s?|coupons?|offers?|vouchers?|special\s*discounts?|comps?|birthday\s*comp|birthday\s*corp|rebate|savings?|less\s*discount)\b/i;
 const SERVICE_CHARGE_RE = /\b(?:service\s*charge|service\s*fee|s\.?c\.?)\b/i;
 const TIP_RE = /\b(?:tip|gratuity)\b/i;
 const ROUND_OFF_RE = /\b(?:round\s*off|roundoff|rounding)\b/i;
@@ -438,8 +438,9 @@ export function parseReceipt(
       }
     }
 
-    // Check for Discount lines
-    if (DISCOUNT_RE.test(norm)) {
+    // Check for Discount lines (also captures negative amounts like -10.00 or (10.00))
+    const isNegativePrice = /-\s*\$?\d+(?:\.\d{2})?|\(\$?\d+(?:\.\d{2})?\)/.test(norm);
+    if (DISCOUNT_RE.test(norm) || isNegativePrice) {
       pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
@@ -545,8 +546,7 @@ export function parseReceipt(
 
   if (detectedGrandTotalMinor !== undefined) {
     // If detected total is less than item subtotal (and no discount exists),
-    // the OCR almost certainly captured a subtotal, partial amount, or noise instead of the real total.
-    // In that case, default to calculatedTotal from items to avoid undercounting expenses.
+    // default to calculatedTotal from items to avoid undercounting expenses
     if (itemSubtotalMinor > 0 && detectedGrandTotalMinor < itemSubtotalMinor && discountMinor === 0) {
       totalMinor = calculatedTotal;
       isTotalConfirmed = false;

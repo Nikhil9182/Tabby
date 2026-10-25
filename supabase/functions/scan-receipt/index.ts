@@ -200,6 +200,8 @@ Rules:
 - Extract item descriptions, quantities, unit prices (if visible), and line total prices.
 - Identify merchant name, receipt date (in YYYY-MM-DD if recognizable), and currency code (e.g. ${currency}).
 - Distinguish subtotal, tax / GST, tip / service charge, discount, and final grand total.
+- CRITICAL FOR DISCOUNTS: If there are discounts, promo codes, comps, coupons, vouchers, birthday comps, or negative line amounts (e.g. "-10.00", "Discounts Sub-Total -10.00", "Birthday Corp -10.00"), you MUST extract the discount as a positive number in the 'discount' field (e.g. 10.00). Do NOT omit discounts, and do NOT add discounts as regular purchased items.
+- RECONCILIATION: Check: total = subtotal + tax + tip - discount. If subtotal is greater than total, make sure the difference is accurately captured in 'discount'.
 - If quantity is omitted, assume 1.
 - Do NOT include currency symbols in numbers.
 `;
@@ -230,7 +232,7 @@ Rules:
             currency: { type: "STRING", description: "3-letter currency code, e.g. INR, USD, EUR" },
             subtotal: { type: "NUMBER", description: "Subtotal before tax" },
             tax: { type: "NUMBER", description: "Total tax, VAT, or GST" },
-            discount: { type: "NUMBER", description: "Total discount" },
+            discount: { type: "NUMBER", description: "Total discount or savings as a positive number (e.g. 10.00 for -10.00 discount)" },
             tip: { type: "NUMBER", description: "Tip or service charge" },
             total: { type: "NUMBER", description: "Final grand total payable" },
             items: {

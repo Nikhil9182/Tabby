@@ -167,11 +167,18 @@ export class GeminiReceiptService {
 
     const itemSubtotalMinor = items.reduce((sum, item) => sum + item.lineTotalMinor, 0);
     const taxMinor = toMinorUnits(data.tax || 0, currency);
-    const discountMinor = toMinorUnits(data.discount || 0, currency);
+    let discountMinor = toMinorUnits(data.discount || 0, currency);
     const tipMinor = toMinorUnits(data.tip || 0, currency);
     const subtotalMinor = data.subtotal ? toMinorUnits(data.subtotal, currency) : itemSubtotalMinor;
 
     let totalMinor = toMinorUnits(data.total || 0, currency);
+
+    // If discount was not extracted or was 0, but total is less than itemSubtotal:
+    // Reconcile the discount from the difference so the user's receipt balances automatically
+    if (discountMinor === 0 && totalMinor > 0 && itemSubtotalMinor > totalMinor + taxMinor + tipMinor) {
+      discountMinor = itemSubtotalMinor + taxMinor + tipMinor - totalMinor;
+    }
+
     if (totalMinor === 0 && (itemSubtotalMinor > 0 || taxMinor > 0)) {
       totalMinor = itemSubtotalMinor + taxMinor + tipMinor - discountMinor;
     }

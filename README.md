@@ -6,17 +6,17 @@
 
 **Split bills with friends, minus the awkward maths.**
 
-A Splitwise-style expense tracker for friends, flatmates and trips, with real multi-currency support and on-device receipt scanning.<br />
-Built with React 19, TypeScript, Tailwind CSS 4, and Supabase. Fork it and make it your own.
+A Splitwise-style expense tracker for friends, flatmates and trips, with real multi-currency support and dual-engine AI & on-device receipt scanning.<br />
+Built with React 19, TypeScript, Tailwind CSS 4, Supabase, and Google Gemini Vision. Fork it and make it your own.
 
-[**Live Demo**](https://nikhil9182.github.io/Tabby/) · [Features](#-features) · [Screenshots](#-screenshots) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Architecture](#-architecture)
+[**Live Demo**](https://nikhil9182.github.io/Tabby/) · [Features](#-features) · [Screenshots](#-screenshots) · [Quick Start](#-quick-start) · [Receipt Scanning](#-ai--local-receipt-scanning) · [How It Works](#-how-it-works) · [Architecture](#-architecture)
 
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Supabase](https://img.shields.io/badge/Supabase-Postgres_·_Auth_·_Realtime-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
-[![Tested with Vitest](https://img.shields.io/badge/tested_with-Vitest_295_tests-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres_·_Auth_·_Edge_Functions-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
+[![Tested with Vitest](https://img.shields.io/badge/tested_with-Vitest_332_tests-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 <br />
 
@@ -32,11 +32,11 @@ Built with React 19, TypeScript, Tailwind CSS 4, and Supabase. Fork it and make 
 
 Splitting costs sounds simple until someone pays in dollars, someone else in rupees, three people settle up a week later, and no one wants to type in a 15-item restaurant bill. Tabby keeps a running tab of **who owes whom**, and keeps the numbers mathematically correct:
 
-- **📸 Instant receipt scanning.** Snap a photo of any receipt. Tabby detects items, quantities, taxes, tips, and discounts locally in your browser.
-- **💰 No rounding drift.** Money is stored strictly as integer cents (or paise, or yen), and splits always add up to the exact total down to the single penny.
-- **🌐 No currency mix-ups.** A $50 debt stays a $50 debt. Totals are converted for display using live rates, never added together raw.
-- **⚡ Guest mode included.** Try the full app immediately without signing in. Data lives in local browser storage (IndexedDB) and merges into your cloud account when you sign in.
-- **🛡️ Private by design.** Postgres row-level security ensures you only ever see expenses you're directly part of.
+- **📸 Dual-Engine Receipt Scanning.** Cloud AI Vision extracts store names, dishes, quantities, discounts, and taxes in seconds. If offline or in guest mode, it automatically falls back to on-device Tesseract OCR.
+- **💰 No Rounding Drift.** Money is stored strictly as integer minor units (cents, paise, yen). Fractions are distributed deterministically so splits always add up to the exact total down to the single penny.
+- **🌐 No Currency Mix-ups.** A $50 debt stays a $50 debt. Totals are converted for display using live European Central Bank exchange rates, never added together raw.
+- **⚡ Guest Mode Included.** Try the full app immediately without signing in. Data lives in local browser storage (IndexedDB) and merges into your cloud account when you sign in.
+- **🛡️ Enterprise-Grade Privacy.** Postgres row-level security ensures you only ever see expenses you're directly part of. Backend Gemini credentials are never exposed to browser clients.
 
 ---
 
@@ -45,7 +45,7 @@ Splitting costs sounds simple until someone pays in dollars, someone else in rup
 <div align="center">
 
 ### Receipt Scanning & Smart Bill Splitting
-*Extract restaurant receipts client-side with Tesseract.js OCR and assign individual dishes to friends.*
+*Extract restaurant receipts with AI Vision or local OCR and assign individual dishes to friends.*
 
 <p align="center">
   <img src="docs/screenshots/receipt-scanner.png" alt="Receipt Scanner" width="85%" style="border-radius: 10px;" />
@@ -77,16 +77,40 @@ Splitting costs sounds simple until someone pays in dollars, someone else in rup
 
 | | |
 | :--- | :--- |
-| 📸 **Receipt OCR scanner** | Take a photo or upload a receipt. Client-side OCR detects store name, item lines, GST/VAT taxes, tips, and discounts with automatic discrepancy safeguards. |
-| 🧮 **Smart bill splitting** | Split bills equally, by exact amounts, by percentage, by shares, or assign individual receipt dishes to specific friends with proportional tax allocation. |
-| 👤 **Guest mode** | Test and use Tabby with zero signup. Data persists in browser IndexedDB and smoothly merges with your account when you sign in with Google. |
-| 👥 **Friends and groups** | Keep a continuous tab with one friend, or create groups for road trips, flatmates, or holidays. The balances never cross-contaminate. |
-| 🤝 **Simplified debt settlement** | Record payments, see balances update instantly, and follow smart suggestions using a greedy cash-flow algorithm that requires the fewest transfers. |
-| 🌍 **True multi-currency** | Add expenses in any currency and see balances converted at real-time exchange rates. Settle a USD debt in INR with rate snapshots locked at payment time. |
-| 📊 **Reports & CSV export** | Monthly trends, category breakdowns, and friend/group split distributions with one-click CSV export. |
-| ⚡ **Realtime sync** | Multi-device sync powered by Supabase Realtime—new expenses and settlements appear instantly without page reloads. |
+| 📸 **AI & Local Receipt Scanner** | Take a photo or upload a receipt. AI Vision securely extracts items, prices, discounts, and taxes with seamless offline Local OCR fallback. |
+| 🧮 **Smart Bill Splitting** | Split bills equally, by exact amounts, by percentage, by shares, or assign individual receipt dishes to specific friends with proportional tax and discount allocation. |
+| 👤 **Guest Mode** | Test and use Tabby with zero signup. Data persists in browser IndexedDB and smoothly merges with your account when you sign in with Google. |
+| 👥 **Friends & Groups** | Keep a continuous tab with one friend, or create groups for road trips, flatmates, or holidays. Group and direct balances never cross-contaminate. |
+| 🤝 **Simplified Debt Settlement** | Record payments, see balances update instantly, and follow smart suggestions using a greedy cash-flow algorithm that requires the fewest transfers. |
+| 🌍 **True Multi-Currency** | Add expenses in any currency and see balances converted at real-time exchange rates. Settle a USD debt in INR with rate snapshots locked at payment time. |
+| 📊 **Reports & CSV Export** | Monthly trends, category breakdowns, and friend/group split distributions with one-click CSV export. |
+| ⚡ **Realtime Sync** | Multi-device sync powered by Supabase Realtime—new expenses and settlements appear instantly without page reloads. |
 | 📱 **Installable PWA** | Works offline and installs as a progressive web app on iOS, Android, macOS, and Windows. |
-| 🔐 **Row-level security** | Enforced at the Postgres database layer. No user can read, insert, or alter an expense they are not an explicit participant of. |
+| 🔐 **Row-Level Security** | Enforced at the Postgres database layer. No user can read, insert, or alter an expense they are not an explicit participant of. |
+
+---
+
+## 🔍 AI & Local Receipt Scanning
+
+Tabby uses a resilient **hybrid receipt-processing pipeline**:
+
+```mermaid
+flowchart TD
+    A[Upload Receipt Image] --> B[Client-Side Image Optimization<br/>Resizes camera photos to 1400px JPEG]
+    B --> C{Authenticated & Cloud Available?}
+    C -- Yes --> D[Supabase Edge Function: scan-receipt]
+    D --> E[Google Gemini Vision API<br/>Dynamic ModelService.ListModels Discovery]
+    E -- Success --> G[Structured Receipt Review & Splitting]
+    E -- Error / Timeout / 503 --> F[Automatic Silent Fallback to Local OCR]
+    C -- No / Guest --> F[Tesseract.js On-Device Worker]
+    F --> G
+```
+
+1. **Client-Side Image Optimization**: Camera photos (often 5MB–12MB) are automatically resized to 1400px before uploading, cutting bandwidth by 97% and reducing AI processing time from 60+ seconds to 1–2 seconds.
+2. **Server-Side Security**: The `GEMINI_API_KEY` is stored **strictly in Supabase Edge Secrets** and is never leaked to client bundles, local storage, or Git.
+3. **Dynamic Model Discovery**: The Edge Function dynamically discovers available Gemini models via Google's `ModelService.ListModels` API, prioritizing modern flash models without breaking when Google updates model aliases.
+4. **Automatic Silent Fallback**: If cloud AI is busy, reaches high demand, or times out, Tabby automatically runs local on-device OCR (Tesseract.js) without disturbing the user with error popups.
+5. **Smart Discount & Tax Handling**: Distinguishes negative discounts (`-10.00`, promos, vouchers), taxes, and tips, ensuring items and bill totals reconcile with a one-click discrepancy resolver.
 
 ---
 
@@ -119,7 +143,19 @@ In your Supabase project, open the **SQL Editor** and run each migration in [`su
 
 > 💡 **Using the Supabase CLI?** Simply run `supabase link` followed by `supabase db push`.
 
-### 3. Configure Google OAuth
+### 3. Deploy the AI Receipt Scanner (Supabase Edge Function)
+
+Configure your Google Gemini API key as a secure secret in Supabase and deploy the function:
+
+```bash
+# 1. Set your Gemini API key in Supabase Edge Secrets
+npx supabase secrets set GEMINI_API_KEY="your-gemini-api-key" --project-ref your-project-ref
+
+# 2. Deploy the scan-receipt Edge Function
+npx supabase functions deploy scan-receipt --project-ref your-project-ref --no-verify-jwt
+```
+
+### 4. Configure Google OAuth
 
 1. Go to **Google Cloud Console → APIs & Services → Credentials** and create an **OAuth Client ID** (Web Application).
 2. Add Supabase's redirect URI (from **Supabase → Authentication → Providers → Google**, e.g., `https://<project-ref>.supabase.co/auth/v1/callback`) to **Authorized redirect URIs**.
@@ -128,7 +164,7 @@ In your Supabase project, open the **SQL Editor** and run each migration in [`su
    - `http://localhost:5173/**` (development)
    - `https://<your-username>.github.io/<repo>/**` (production)
 
-### 4. Configure environment variables
+### 5. Configure environment variables
 
 ```bash
 cp .env.example .env
@@ -139,7 +175,7 @@ VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
 ```
 
-### 5. Launch the development server
+### 6. Launch the development server
 
 ```bash
 npm run dev
@@ -154,7 +190,7 @@ Open <http://localhost:5173> and click **Continue as Guest** or sign in with Goo
 ```mermaid
 flowchart LR
   subgraph Client["Browser · React 19 SPA"]
-    UI["Pages & Components<br/>(Tailwind 4 + shadcn)"] --> Hooks["TanStack Query Hooks"]
+    UI["Pages & Components<br/>(Tailwind 4 + Radix)"] --> Hooks["TanStack Query Hooks"]
     OCR["Tesseract.js OCR<br/>(Client-Side Worker)"] --> UI
     Hooks --> Domain["Domain Layer<br/>money · splits · balance engine"]
     Hooks --> Services["Services Layer"]
@@ -163,6 +199,8 @@ flowchart LR
 
   Services -->|OAuth Sign-in| Auth[(Supabase Auth)]
   Services -->|Atomic RPCs & Queries| DB[(PostgreSQL + RLS)]
+  Services -->|scan-receipt| EdgeFunc[(Supabase Edge Functions)]
+  EdgeFunc -->|Vision Extraction| Gemini[Google Gemini API]
   DB -->|Live Change Subscriptions| Realtime[(Supabase Realtime)]
   Realtime --> Hooks
   Services -->|Daily ECB FX Rates| FX[Frankfurter API]
@@ -171,10 +209,10 @@ flowchart LR
 ### 🔬 Engineering Highlights
 
 - **💰 Integer Minor Unit Math:** Every monetary calculation is strictly integer-based (cents, paise, yen). Fractions and remainders are allocated deterministically using largest-remainder distribution, ensuring zero-drift splits ([`src/domain/money`](src/domain/money), [`src/domain/splits`](src/domain/splits)).
-- **📸 Local Browser OCR:** Receipt scanning runs 100% on-device via web workers with Tesseract.js. No receipt images are uploaded to external cloud AI APIs, preserving user privacy.
+- **📸 Hybrid Vision & Local OCR:** Fast multimodal AI vision running through Supabase Edge Functions with zero client credentials, with automatic fallback to client-side Tesseract.js.
 - **🌐 Dual-Ledger Currency Policy:** Balances are tracked per currency independently. Cross-currency debts snapshot exchange rates at the moment of payment to protect historical records from fluctuating exchange rates ([policy doc](ARCHITECTURE.md#81-conversion-policy)).
 - **🧭 Greedy Debt Simplification:** Reduces a tangled web of group debts to the minimum number of transactions using a graph cash-flow algorithm ([`balance-engine.ts`](src/domain/balances/balance-engine.ts)).
-- **🧪 295 Passing Tests:** Comprehensive Vitest test suite covering multi-currency edge cases, settlement snapshots, receipt parsing heuristics, and guest data migrations.
+- **🧪 332 Passing Tests:** Comprehensive Vitest test suite covering multi-currency edge cases, settlement snapshots, receipt parsing heuristics, and guest data migrations.
 
 ---
 
@@ -183,14 +221,16 @@ flowchart LR
 ```text
 src/
 ├── app/            # App shell, router definitions, global providers
-├── components/     # UI building blocks (ui/ = shadcn-style primitives, receipts/ = OCR modal)
+├── components/     # UI building blocks (ui/ = primitives, receipts/ = scanner modal)
 ├── domain/         # Pure business logic: money math, receipt parser, splits, balances
 ├── features/       # Feature pages: dashboard, expenses, friends, groups, reports, settings
 ├── hooks/          # Data hooks powered by TanStack Query
 ├── lib/            # Supabase client, database types, utility helpers
-├── services/       # OCR service, Supabase adapters, Frankfurter currency service
+├── services/       # OCR service, AI Vision service, Supabase adapters, Frankfurter FX
 └── styles/         # Tailwind CSS v4 design tokens and theme variables
-supabase/migrations # Production SQL schema migrations, RLS policies, and RPCs
+supabase/
+├── functions/      # Server-side Deno Edge Functions (scan-receipt)
+└── migrations/     # Production SQL schema migrations, RLS policies, and RPCs
 ```
 
 ---
@@ -201,7 +241,7 @@ supabase/migrations # Production SQL schema migrations, RLS policies, and RPCs
 | :--- | :--- |
 | `npm run dev` | Start local Vite development server at <http://localhost:5173> |
 | `npm run build` | Type-check TypeScript and build production bundle to `dist/` |
-| `npm test` | Run all 295 Vitest unit and integration tests |
+| `npm test` | Run all 332 Vitest unit and integration tests |
 | `npm run lint` | Run fast static code analysis with oxlint |
 | `npm run preview` | Preview production build locally |
 | `npm run db:inspect` | Inspect Supabase database tables and RLS status |
@@ -213,7 +253,8 @@ supabase/migrations # Production SQL schema migrations, RLS policies, and RPCs
 
 - All database access is gated by Postgres Row-Level Security policies; the client only holds the public anon key.
 - Authentication uses Google OAuth through Supabase; Tabby never collects or stores passwords.
-- Receipt images scanned with OCR are processed entirely on your device in browser memory and are never uploaded or stored on servers.
+- Server-side Gemini API credentials remain strictly confined to Supabase Secrets; zero API keys are bundled or stored in the browser.
+- Receipt images processed with local OCR run entirely on your device in browser memory.
 - Zero tracking or analytics cookies. Full policy available in [`public/privacy.html`](public/privacy.html).
 
 ---
