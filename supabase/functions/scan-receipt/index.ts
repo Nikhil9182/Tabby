@@ -109,10 +109,11 @@ serve(async (req: Request) => {
     const configuredModel = Deno.env.get("GEMINI_MODEL")?.replace(/^["']|["']$/g, "").trim();
     const candidateModels = [
       configuredModel,
-      "gemini-1.5-flash",
-      "gemini-1.5-flash-latest",
+      "gemini-3.8-flash",
       "gemini-2.5-flash",
       "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest",
     ].filter(Boolean) as string[];
     const uniqueModels = Array.from(new Set(candidateModels));
 
@@ -248,9 +249,23 @@ Rules:
         const errBody = await geminiRes.json().catch(() => null);
         const errMsg = errBody?.error?.message || `Gemini API returned status ${geminiRes.status}`;
 
-        if (geminiRes.status === 404) {
-          console.warn(`Model ${targetModel} returned 404. Trying next model candidate...`);
+        const isModelUnavailable =
+          geminiRes.status === 404 ||
+          errMsg.includes("no longer available") ||
+          errMsg.includes("not found") ||
+          errMsg.includes("is not supported") ||
+          errMsg.includes("deprecated");
+
+        if (isModelUnavailable) {
+          console.warn(`Model ${targetModel} unavailable (${errMsg}). Trying next model candidate...`);
           lastError = errMsg;
+
+          // Check if Google suggested a replacement model in the error message
+          // e.g. "Please update your code to use models/gemini-3.8-flash"
+          const suggestedMatch = errMsg.match(/models\/([a-zA-Z0-9._-]+)/);
+          if (suggestedMatch && suggestedMatch[1] && !uniqueModels.includes(suggestedMatch[1])) {
+            uniqueModels.push(suggestedMatch[1]);
+          }
           continue;
         }
 
