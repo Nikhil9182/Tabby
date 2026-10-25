@@ -107,13 +107,43 @@ serve(async (req: Request) => {
 
     // Configurable Gemini model ID with fallback array
     const configuredModel = Deno.env.get("GEMINI_MODEL")?.replace(/^["']|["']$/g, "").trim();
+
+    // Query Google's ModelService.ListModels API to get the exact live list of supported models
+    let dynamicModels: string[] = [];
+    try {
+      const listController = new AbortController();
+      const listTimeout = setTimeout(() => listController.abort(), 5000);
+      const listRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+        { signal: listController.signal }
+      );
+      clearTimeout(listTimeout);
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const modelsList = listData?.models || [];
+        dynamicModels = modelsList
+          .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+          .map((m: any) => m.name.replace(/^models\//, ""))
+          .filter((name: string) => !name.includes("embedding") && !name.includes("aqa"));
+        console.log(`Discovered ${dynamicModels.length} models supporting generateContent:`, dynamicModels);
+      }
+    } catch (listErr: any) {
+      console.warn("Failed to fetch models from ListModels:", listErr?.message);
+    }
+
+    // Sort flash models first, then pro models
+    const sortedDynamicModels = [...dynamicModels].sort((a, b) => {
+      const aScore = a.includes("flash") ? 2 : a.includes("pro") ? 1 : 0;
+      const bScore = b.includes("flash") ? 2 : b.includes("pro") ? 1 : 0;
+      return bScore - aScore;
+    });
+
     const candidateModels = [
       configuredModel,
-      "gemini-3.8-flash",
+      ...sortedDynamicModels,
       "gemini-2.5-flash",
       "gemini-2.0-flash",
       "gemini-1.5-flash",
-      "gemini-1.5-flash-latest",
     ].filter(Boolean) as string[];
     const uniqueModels = Array.from(new Set(candidateModels));
 
@@ -243,6 +273,7 @@ Rules:
 
         if (geminiRes.ok) {
           geminiJson = await geminiRes.json();
+          console.log(`Successfully generated receipt scan with model: ${targetModel}`);
           break; // Success!
         }
 
@@ -251,12 +282,15 @@ Rules:
 
         const isModelUnavailable =
           geminiRes.status === 404 ||
+          geminiRes.status === 400 ||
           geminiRes.status === 503 ||
           errMsg.includes("high demand") ||
           errMsg.includes("temporarily unavailable") ||
           errMsg.includes("no longer available") ||
           errMsg.includes("not found") ||
           errMsg.includes("is not supported") ||
+          errMsg.includes("Call ModelService.ListModels") ||
+          errMsg.includes("not found for API version") ||
           errMsg.includes("deprecated");
 
         if (isModelUnavailable) {
