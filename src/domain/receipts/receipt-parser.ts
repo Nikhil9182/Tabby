@@ -10,12 +10,12 @@ import type {
 
 // Common regex patterns
 const SEPARATOR_RE = /^[=\-_*#.]{3,}$/;
-const PHONE_RE = /\b(?:ph(?:\.?\s*no\.?)?|phone|tel|mobile|call|contact|fax)[:.\s]*[+]?\d[\d\s,-]{6,}/i;
+const PHONE_RE = /\b(?:ph(?:\.?\s*no\.?)?|phone|tel|mobile|call|contact|fax)[:.\s-]*[+]?\d[\d\s,-]{6,}/i;
 const GSTIN_RE = /\b(?:gstin|gst\s*no|gst|tin|vat\s*tin|pan|fssai)[:.\s]*[0-9a-z]{8,}/i;
 const INVOICE_NO_RE = /\b(?:inv(?:oice)?|bill|receipt|order|token|check|chk|creck|table|pos)(?:\s*(?:no\.?|number|id|#))?[:.\s]*[a-z0-9\-_/]+/i;
 const COMPANY_ENTITY_RE = /\b(?:pvt\.?\s*ltd\.?|private\s*limited|ltd\.?|limited|llp|inc\.?|corp\.?|co\.?)\b/i;
-const ADDRESS_RE = /\b(?:sector|road|street|nagar|marg|lane|block|floor|bldg|building|complex|plaza|colony|enclave|opp|opposite|near|behind|pin|pincode|post)\b/i;
-const PINCODE_RE = /\b[a-z\s]+[-]\s*\d{6}\b/i;
+const ADDRESS_RE = /\b(?:sector|road|street|nagar|marg|lane|block|floor|bldg|building|complex|plaza|colony|enclave|suite|opp|opposite|near|behind|pin|pincode|post)\b/i;
+const PINCODE_RE = /\b(?:[A-Z]{2}\s+\d{5}(?:-\d{4})?|[a-z\s]+[-]\s*\d{6}|\b\d{6}\b)\b/i;
 const TABLE_PERSON_RE = /\b(?:table|person|pax|server|waiter|steward|station|counter)\b[:.\s#]*\w+/i;
 const NAME_FIELD_RE = /^\s*name\s*[:]/i;
 const TOTAL_QTY_RE = /\b(?:total\s*qty|tot\s*qty|qty\s*total)\b/i;
@@ -28,7 +28,7 @@ const PAYMENT_METHOD_RE = /\b(?:cash\s*tendered|change\s*due|paid\s*via|upi|payt
 const GRAND_TOTAL_RE = /\b(?:grand\s*total|net\s*payable|net\s*amount|amount\s*due|bill\s*total|final\s*total|total\s*payable|total\s*due)\b/i;
 const TOTAL_RE = /\b(?:total|amount|tot)\b/i;
 const SUBTOTAL_RE = /\b(?:sub\s*total|subtotal|sub-total|s[u3b]b?\s*total|item\s*total|food\s*total|gross\s*amount|gross\s*total)\b/i;
-const TAX_RE = /\b(cgst|sgst|igst|gst|vat|sales\s*tax|service\s*tax|s\.?\s*tax|tax)\b/i;
+const TAX_RE = /\b(cgst|sgst|igst|gst|vat|sales\s*tax(?:es)?|service\s*tax(?:es)?|total\s*taxes|s\.?\s*tax|tax(?:es)?)\b/i;
 const DISCOUNT_RE = /\b(?:discounts?|disc\.?|promo(?:tion)?s?|coupons?|offers?|vouchers?|special\s*discounts?|comps?|birthday\s*comp|birthday\s*corp|rebate|savings?|less\s*discount)\b/i;
 const SERVICE_CHARGE_RE = /\b(?:service\s*charge|service\s*fee|s\.?c\.?)\b/i;
 const TIP_RE = /\b(?:tip|gratuity)\b/i;
@@ -438,9 +438,9 @@ export function parseReceipt(
       }
     }
 
-    // Check for Discount lines (also captures negative amounts like -10.00 or (10.00))
-    const isNegativePrice = /-\s*\$?\d+(?:\.\d{2})?|\(\$?\d+(?:\.\d{2})?\)/.test(norm);
-    if (DISCOUNT_RE.test(norm) || isNegativePrice) {
+    // Check for Discount lines (matches discount keywords or explicit negative currency amounts like -10.00 or ($10.00))
+    const isNegativePrice = /(?:^|\s)-\s*\$?\d+\.\d{2}\b|(?:\s|^)\(\$?\d+\.\d{2}\)/.test(norm);
+    if (!isMetadataLine(norm) && (DISCOUNT_RE.test(norm) || isNegativePrice)) {
       pendingItemPrefix = null;
       const amounts = extractCandidateAmounts(norm, detectedCurrency);
       if (amounts.length > 0) {
