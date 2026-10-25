@@ -6,7 +6,7 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/Tabby/' : '/',
+  base: process.env.VITE_BASE_PATH || (process.env.VERCEL ? '/' : (command === 'build' ? '/Tabby/' : '/')),
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
