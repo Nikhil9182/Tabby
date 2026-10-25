@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReceiptScannerDialog } from '../receipt-scanner-dialog';
 import { ocrService } from '@/services/ocr/ocr-service';
+import { geminiReceiptService } from '@/services/ai/gemini-receipt-service';
+import type { ParsedReceipt } from '@/domain/receipts/types';
 import { useExpenses } from '@/hooks/use-expenses';
 
 vi.mock('@/services/ocr/ocr-service', () => ({
@@ -281,5 +283,44 @@ describe('ReceiptScannerDialog Integration Flow', () => {
     expect(callArg.sourceType).toBe('group');
     expect(callArg.groupId).toBe('group_lunch');
     expect(mockNavigate).toHaveBeenCalledWith('/groups/group_lunch');
+  });
+
+  it('supports AI Smart Scan mode when Gemini API key is configured', async () => {
+    localStorage.setItem('tabby_gemini_api_key', 'AIzaSyTestKey');
+    const mockParsedReceipt: ParsedReceipt = {
+      merchantName: 'AI Bistro',
+      date: '2026-10-24',
+      currency: 'INR',
+      itemSubtotalMinor: 45000,
+      taxes: [],
+      taxMinor: 0,
+      discountMinor: 0,
+      tipMinor: 0,
+      serviceChargeMinor: 0,
+      totalMinor: 45000,
+      items: [
+        { id: 'item_1', name: 'Pizza', quantity: 1, unitPriceMinor: 45000, lineTotalMinor: 45000 },
+      ],
+      unassignedLines: [],
+      rawConfidence: 99,
+      isTotalConfirmed: true,
+    };
+
+    vi.spyOn(geminiReceiptService, 'parseReceipt').mockResolvedValue(mockParsedReceipt);
+
+    renderComponent();
+
+    // Verify engine toggle is visible
+    expect(screen.getByText('AI Smart Scan (Gemini Flash)')).toBeTruthy();
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['dummy'], 'receipt.jpg', { type: 'image/jpeg' });
+    await userEvent.upload(input, file);
+
+    await waitFor(() => {
+      expect(geminiReceiptService.parseReceipt).toHaveBeenCalled();
+      expect(screen.getByDisplayValue('AI Bistro')).toBeTruthy();
+      expect(screen.getByDisplayValue('Pizza')).toBeTruthy();
+    });
   });
 });

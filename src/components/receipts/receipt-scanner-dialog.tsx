@@ -25,7 +25,10 @@ import type {
 import { Checkbox } from '@/components/ui/checkbox';
 import { compressImageForStorage } from '@/services/image/image-compression';
 import { receiptService } from '@/services/receipts/receipt-service';
-import { Sparkles, Camera, CheckCircle2, AlertCircle } from 'lucide-react';
+import { geminiReceiptService } from '@/services/ai/gemini-receipt-service';
+import { useGeminiConfig } from '@/hooks/use-gemini-config';
+import { cn } from '@/lib/utils';
+import { Sparkles, Camera, CheckCircle2, AlertCircle, Cpu, ArrowRight } from 'lucide-react';
 
 export type ReceiptFlowStep = 'upload' | 'review' | 'split';
 
@@ -61,6 +64,11 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const navigate = useNavigate();
   const { createExpense, isCreating } = useExpenses();
 
+  const { hasKey: hasGeminiKey } = useGeminiConfig();
+  const [scanEngine, setScanEngine] = useState<'ai' | 'ocr'>(() => {
+    return geminiReceiptService.hasApiKey() ? 'ai' : 'ocr';
+  });
+
   const [step, setStep] = useState<ReceiptFlowStep>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalFile, setOriginalFile] = useState<File | null>(null);
@@ -73,6 +81,13 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Sync scanEngine when hasGeminiKey changes
+  useEffect(() => {
+    if (hasGeminiKey) {
+      setScanEngine('ai');
+    }
+  }, [hasGeminiKey]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -93,8 +108,9 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     }
   }, [isOpen]);
 
-  // Handle OCR recognition when file is selected
-  const handleImageSelected = async (file: File) => {
+  // Handle OCR or AI recognition when file is selected
+  const handleImageSelected = async (file: File, overrideEngine?: 'ai' | 'ocr') => {
+    const activeEngine = overrideEngine || scanEngine;
     setSelectedFile(file);
     setOriginalFile(file);
     setOcrError(null);
@@ -103,22 +119,53 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    try {
-      const rawData = await ocrService.recognize(
-        file,
-        (p) => setOcrProgress(p),
-        abortController.signal
-      );
+    const targetCurrency = contextCurrency || defaultCurrency;
 
-      const parsed = parseReceipt(rawData, contextCurrency || defaultCurrency);
-      setParsedReceipt(parsed);
-      setStep('review');
+    try {
+      if (activeEngine === 'ai' && geminiReceiptService.hasApiKey()) {
+        setOcrProgress({
+          status: 'recognizing',
+          progress: 0.35,
+          message: 'Google Gemini 1.5 Flash is extracting items, taxes & totals...',
+        });
+
+        const parsed = await geminiReceiptService.parseReceipt(
+          file,
+          targetCurrency,
+          abortController.signal
+        );
+
+        setOcrProgress({
+          status: 'completed',
+          progress: 1.0,
+          message: 'Receipt parsed successfully by Gemini AI.',
+        });
+
+        setParsedReceipt(parsed);
+        setStep('review');
+      } else {
+        setOcrProgress({
+          status: 'loading',
+          progress: 0.15,
+          message: 'Running local OCR engine...',
+        });
+
+        const rawData = await ocrService.recognize(
+          file,
+          (p) => setOcrProgress(p),
+          abortController.signal
+        );
+
+        const parsed = parseReceipt(rawData, targetCurrency);
+        setParsedReceipt(parsed);
+        setStep('review');
+      }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         // User cancelled
         return;
       }
-      const msg = err instanceof Error ? err.message : 'OCR failed to extract receipt text';
+      const msg = err instanceof Error ? err.message : 'Failed to extract receipt text';
       setOcrError(msg);
     } finally {
       setIsProcessing(false);
@@ -137,6 +184,13 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const handleRetryOcr = () => {
     if (selectedFile) {
       handleImageSelected(selectedFile);
+    }
+  };
+
+  const handleSwitchToOcr = () => {
+    setScanEngine('ocr');
+    if (selectedFile) {
+      handleImageSelected(selectedFile, 'ocr');
     }
   };
 
@@ -431,14 +485,90 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         {/* Scrollable body with no horizontal overflow */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 overscroll-contain">
           {step === 'upload' && (
-            <ReceiptImageUploader
-              onImageSelected={handleImageSelected}
-              isProcessing={isProcessing}
-              progress={ocrProgress}
-              error={ocrError}
-              onCancel={handleCancelOcr}
-              onRetry={handleRetryOcr}
-            />
+            <div className="space-y-4">
+              {/* Engine Switcher or Invite Banner */}
+              {hasGeminiKey ? (
+                <div className="flex items-center justify-center p-1 bg-muted/40 rounded-xl border border-border/50 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setScanEngine('ai')}
+                    disabled={isProcessing}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all',
+                      scanEngine === 'ai'
+                        ? 'bg-background text-primary shadow-xs border border-border/60'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-[#0055FF] dark:text-[#3B82F6]" />
+                    <span>AI Smart Scan (Gemini Flash)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScanEngine('ocr')}
+                    disabled={isProcessing}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all',
+                      scanEngine === 'ocr'
+                        ? 'bg-background text-primary shadow-xs border border-border/60'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                    <span>Local OCR (Offline)</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-xl border border-primary/20 bg-primary/5 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-muted-foreground">
+                      Want <strong>99% accuracy</strong>? Enable free Google Gemini in Settings (No card needed).
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10 shrink-0 gap-1"
+                    onClick={() => {
+                      onClose();
+                      navigate('/settings');
+                    }}
+                  >
+                    <span>Enable AI</span>
+                    <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+
+              <ReceiptImageUploader
+                onImageSelected={handleImageSelected}
+                isProcessing={isProcessing}
+                progress={ocrProgress}
+                error={ocrError}
+                onCancel={handleCancelOcr}
+                onRetry={handleRetryOcr}
+              />
+
+              {ocrError && scanEngine === 'ai' && (
+                <div className="flex items-center justify-between p-3 rounded-xl border border-border/70 bg-muted/20 text-xs">
+                  <span className="text-muted-foreground">
+                    AI scan encountered an error. You can try parsing with local OCR.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSwitchToOcr}
+                    className="h-7 text-xs shrink-0 gap-1.5"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                    <span>Try Local OCR</span>
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
 
           {step === 'review' && parsedReceipt && (
