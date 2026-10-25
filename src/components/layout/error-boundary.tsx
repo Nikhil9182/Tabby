@@ -41,7 +41,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   private handleGoHome = (): void => {
     this.handleReset();
-    window.location.href = "/dashboard";
+    const base = import.meta.env.BASE_URL.endsWith('/')
+      ? import.meta.env.BASE_URL
+      : `${import.meta.env.BASE_URL}/`;
+    window.location.href = `${base}dashboard`;
   };
 
   public override render(): ReactNode {

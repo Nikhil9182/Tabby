@@ -850,7 +850,13 @@ export function ExpenseForm({ expenseId: propExpenseId }: ExpenseFormProps) {
     };
 
     try {
-      const expenseDateISO = new Date(data.expenseDate).toISOString();
+      let expenseDateISO: string;
+      try {
+        const d = new Date(data.expenseDate);
+        expenseDateISO = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+      } catch {
+        expenseDateISO = new Date().toISOString();
+      }
       const rateSnapshot = await buildRateSnapshot(totalAmountMinor, data.currency, data.expenseDate.slice(0, 10));
 
       if (trackingMode === 'direct') {

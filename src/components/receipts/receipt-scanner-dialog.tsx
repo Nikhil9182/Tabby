@@ -192,8 +192,14 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     try {
       const totalAmountMinor = parsedReceipt.totalMinor;
       const receiptCurrency = parsedReceipt.currency;
-      const expenseDate = parsedReceipt.date || new Date().toISOString().slice(0, 10);
-      const expenseDateISO = new Date(expenseDate).toISOString();
+      let expenseDateISO: string;
+      try {
+        const d = parsedReceipt.date ? new Date(parsedReceipt.date) : new Date();
+        expenseDateISO = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+      } catch {
+        expenseDateISO = new Date().toISOString();
+      }
+      const expenseDate = expenseDateISO.slice(0, 10);
 
       const description = parsedReceipt.merchantName
         ? `${parsedReceipt.merchantName} (Receipt)`
