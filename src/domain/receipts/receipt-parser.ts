@@ -544,8 +544,16 @@ export function parseReceipt(
   let isTotalConfirmed = false;
 
   if (detectedGrandTotalMinor !== undefined) {
-    totalMinor = detectedGrandTotalMinor;
-    isTotalConfirmed = true;
+    // If detected total is less than item subtotal (and no discount exists),
+    // the OCR almost certainly captured a subtotal, partial amount, or noise instead of the real total.
+    // In that case, default to calculatedTotal from items to avoid undercounting expenses.
+    if (itemSubtotalMinor > 0 && detectedGrandTotalMinor < itemSubtotalMinor && discountMinor === 0) {
+      totalMinor = calculatedTotal;
+      isTotalConfirmed = false;
+    } else {
+      totalMinor = detectedGrandTotalMinor;
+      isTotalConfirmed = true;
+    }
   } else if (items.length > 0 && calculatedTotal > 0) {
     totalMinor = calculatedTotal;
     isTotalConfirmed = false;

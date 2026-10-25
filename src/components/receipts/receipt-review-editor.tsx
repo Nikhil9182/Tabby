@@ -328,7 +328,7 @@ export const ReceiptReviewEditor: React.FC<ReceiptReviewEditorProps> = ({
                     variant="outline"
                     size="xs"
                     onClick={handleSyncTotal}
-                    className="h-7 text-xs gap-1.5 font-semibold border-amber-500/40 hover:bg-amber-500/10"
+                    className="h-7 text-xs gap-1.5 font-semibold border-amber-500/40 hover:bg-amber-500/10 cursor-pointer"
                   >
                     <RefreshCw className="h-3 w-3" />
                     <span>Match Items ({formatMoney(calculatedExpectedTotalMinor, currency)})</span>
@@ -341,6 +341,24 @@ export const ReceiptReviewEditor: React.FC<ReceiptReviewEditorProps> = ({
                 </div>
               )}
             </div>
+
+            {hasDiscrepancy && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs flex items-start gap-2.5">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
+                <div className="space-y-0.5 min-w-0">
+                  <p className="font-semibold text-foreground">
+                    {totalDiscrepancyMinor < 0
+                      ? 'Bill Total is less than item subtotal'
+                      : 'Bill Total is higher than items + taxes'}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {totalDiscrepancyMinor < 0
+                      ? `Items sum to ${formatMoney(calculatedExpectedTotalMinor, currency)}, but total is ${formatMoney(receipt.totalMinor, currency)}. The expense will record ${formatMoney(receipt.totalMinor, currency)} unless synced. Click "Match Items" if the total was misread by OCR.`
+                      : `Items and taxes sum to ${formatMoney(calculatedExpectedTotalMinor, currency)}, leaving ${formatMoney(totalDiscrepancyMinor, currency)} in extra charges. Click "Match Items" to match items or verify taxes/tip.`}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

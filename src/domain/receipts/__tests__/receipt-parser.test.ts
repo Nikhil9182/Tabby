@@ -228,5 +228,28 @@ Discounts Sub-Total -10.00
       expect(parsed.items.length).toBeGreaterThanOrEqual(1);
       expect(parsed.totalMinor).toBe(32500);
     });
+
+    it('defaults to calculated items total when detected total is less than items subtotal', () => {
+      const receiptText = `
+        PIZZERIA
+        Pizza Margherita 500.00
+        Garlic Bread 250.00
+        Coke 100.00
+        Total Qty: 3
+        Total 100.00
+      `;
+      const lines = receiptText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((text, idx) => ({ text, confidence: 90, lineNumber: idx + 1 }));
+
+      const parsed = parseReceipt({ text: receiptText, lines, confidence: 90 }, 'INR');
+      // Sum of items is 850.00, whereas detected total line was 100.00 (less than items)
+      expect(parsed.items.length).toBe(3);
+      expect(parsed.itemSubtotalMinor).toBe(85000);
+      expect(parsed.totalMinor).toBe(85000); // Successfully prevented 100.00 from overriding 850.00
+      expect(parsed.isTotalConfirmed).toBe(false);
+    });
   });
 });
