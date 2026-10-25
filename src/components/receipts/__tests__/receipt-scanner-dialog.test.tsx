@@ -6,8 +6,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReceiptScannerDialog } from '../receipt-scanner-dialog';
 import { ocrService } from '@/services/ocr/ocr-service';
 import { geminiReceiptService } from '@/services/ai/gemini-receipt-service';
+import { useGeminiConfig } from '@/hooks/use-gemini-config';
 import type { ParsedReceipt } from '@/domain/receipts/types';
 import { useExpenses } from '@/hooks/use-expenses';
+
+vi.mock('@/hooks/use-gemini-config', () => ({
+  useGeminiConfig: vi.fn(() => ({
+    isAvailable: false,
+    isAuthenticated: false,
+  })),
+  useAiScanner: vi.fn(() => ({
+    isAvailable: false,
+    isAuthenticated: false,
+  })),
+}));
 
 vi.mock('@/services/ocr/ocr-service', () => ({
   ocrService: {
@@ -285,8 +297,12 @@ describe('ReceiptScannerDialog Integration Flow', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/groups/group_lunch');
   });
 
-  it('supports AI Smart Scan mode when Gemini API key is configured', async () => {
-    localStorage.setItem('tabby_gemini_api_key', 'AIzaSyTestKey');
+  it('supports AI Smart Scan mode when user is authenticated with cloud AI available', async () => {
+    vi.mocked(useGeminiConfig).mockReturnValue({
+      isAvailable: true,
+      isAuthenticated: true,
+    });
+
     const mockParsedReceipt: ParsedReceipt = {
       merchantName: 'AI Bistro',
       date: '2026-10-24',
@@ -311,7 +327,7 @@ describe('ReceiptScannerDialog Integration Flow', () => {
     renderComponent();
 
     // Verify engine toggle is visible
-    expect(screen.getByText('AI Smart Scan (Gemini Flash)')).toBeTruthy();
+    expect(screen.getByText(/AI Smart Scan \(Cloud Vision\)/i)).toBeTruthy();
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['dummy'], 'receipt.jpg', { type: 'image/jpeg' });
@@ -321,6 +337,57 @@ describe('ReceiptScannerDialog Integration Flow', () => {
       expect(geminiReceiptService.parseReceipt).toHaveBeenCalled();
       expect(screen.getByDisplayValue('AI Bistro')).toBeTruthy();
       expect(screen.getByDisplayValue('Pizza')).toBeTruthy();
+    });
+  });
+
+  it('provides seamless fallback to Local OCR when AI scanning encounters an error', async () => {
+    vi.mocked(useGeminiConfig).mockReturnValue({
+      isAvailable: true,
+      isAuthenticated: true,
+    });
+
+    vi.spyOn(geminiReceiptService, 'parseReceipt').mockRejectedValue(
+      new Error('AI rate limit reached. Please wait a moment or use Local OCR.')
+    );
+
+    const fixtureText = `
+      DOMINOS PIZZA
+      Date: 2026-10-24
+      Margherita Pizza 350.00
+      Total 350.00
+    `;
+
+    vi.mocked(ocrService.recognize).mockResolvedValue({
+      text: fixtureText,
+      lines: fixtureText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((text, idx) => ({ text, confidence: 90, lineNumber: idx + 1 })),
+      confidence: 90,
+    });
+
+    renderComponent();
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['dummy'], 'receipt.jpg', { type: 'image/jpeg' });
+    await userEvent.upload(input, file);
+
+    // Verify error is displayed
+    await waitFor(() => {
+      expect(screen.getByText(/AI rate limit reached/i)).toBeTruthy();
+    });
+
+    // Click "Try Local OCR"
+    const fallbackBtn = screen.getByRole('button', { name: /Try Local OCR/i });
+    expect(fallbackBtn).toBeTruthy();
+    await userEvent.click(fallbackBtn);
+
+    // Verify OCR was triggered and review screen opens
+    await waitFor(() => {
+      expect(ocrService.recognize).toHaveBeenCalled();
+      expect(screen.getByText(/Review Scanned Details/i)).toBeTruthy();
+      expect(screen.getByDisplayValue('Margherita Pizza')).toBeTruthy();
     });
   });
 });

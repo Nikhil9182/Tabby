@@ -64,9 +64,9 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
   const navigate = useNavigate();
   const { createExpense, isCreating } = useExpenses();
 
-  const { hasKey: hasGeminiKey } = useGeminiConfig();
+  const { isAvailable: isAiAvailable, isAuthenticated } = useGeminiConfig();
   const [scanEngine, setScanEngine] = useState<'ai' | 'ocr'>(() => {
-    return geminiReceiptService.hasApiKey() ? 'ai' : 'ocr';
+    return isAiAvailable ? 'ai' : 'ocr';
   });
 
   const [step, setStep] = useState<ReceiptFlowStep>('upload');
@@ -82,12 +82,14 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Sync scanEngine when hasGeminiKey changes
+  // Sync scanEngine when isAiAvailable changes
   useEffect(() => {
-    if (hasGeminiKey) {
+    if (isAiAvailable) {
       setScanEngine('ai');
+    } else {
+      setScanEngine('ocr');
     }
-  }, [hasGeminiKey]);
+  }, [isAiAvailable]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -122,11 +124,11 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     const targetCurrency = contextCurrency || defaultCurrency;
 
     try {
-      if (activeEngine === 'ai' && geminiReceiptService.hasApiKey()) {
+      if (activeEngine === 'ai' && isAiAvailable) {
         setOcrProgress({
           status: 'recognizing',
           progress: 0.35,
-          message: 'Google Gemini 1.5 Flash is extracting items, taxes & totals...',
+          message: 'AI is analyzing receipt items & taxes via secure cloud edge...',
         });
 
         const parsed = await geminiReceiptService.parseReceipt(
@@ -486,8 +488,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 overscroll-contain">
           {step === 'upload' && (
             <div className="space-y-4">
-              {/* Engine Switcher or Invite Banner */}
-              {hasGeminiKey ? (
+              {/* Engine Switcher or Guest Mode Notice */}
+              {isAiAvailable ? (
                 <div className="flex items-center justify-center p-1 bg-muted/40 rounded-xl border border-border/50 gap-1">
                   <button
                     type="button"
@@ -501,7 +503,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
                     )}
                   >
                     <Sparkles className="h-3.5 w-3.5 text-[#0055FF] dark:text-[#3B82F6]" />
-                    <span>AI Smart Scan (Gemini Flash)</span>
+                    <span>AI Smart Scan (Cloud Vision)</span>
                   </button>
                   <button
                     type="button"
@@ -519,26 +521,29 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-3 rounded-xl border border-primary/20 bg-primary/5 text-xs">
+                <div className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/20 text-xs">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                    <Camera className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span className="text-muted-foreground">
-                      Want <strong>99% accuracy</strong>? Enable free Google Gemini in Settings (No card needed).
+                      Running in <strong>Local OCR Mode</strong> (Tesseract engine).
+                      {!isAuthenticated && ' Sign in to enable AI Smart Scanning.'}
                     </span>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10 shrink-0 gap-1"
-                    onClick={() => {
-                      onClose();
-                      navigate('/settings');
-                    }}
-                  >
-                    <span>Enable AI</span>
-                    <ArrowRight className="h-3 w-3" />
-                  </Button>
+                  {!isAuthenticated && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10 shrink-0 gap-1"
+                      onClick={() => {
+                        onClose();
+                        navigate('/welcome');
+                      }}
+                    >
+                      <span>Sign In</span>
+                      <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               )}
 

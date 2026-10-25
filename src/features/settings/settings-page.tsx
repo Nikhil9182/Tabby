@@ -15,9 +15,7 @@ import {
   Heart,
   ExternalLink,
   Sparkles,
-  Key,
-  Eye,
-  EyeOff,
+
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,23 +48,7 @@ export function SettingsPage() {
   const { expenses } = useExpenses();
   const { groups } = useGroups();
   const { settlements } = useSettlements();
-  const {
-    apiKey: geminiKey,
-    saveKey: saveGeminiKey,
-    clearKey: clearGeminiKey,
-    testKey: testGeminiKey,
-    isTesting: isTestingGemini,
-  } = useGeminiConfig();
-
-  // Gemini state
-  const [geminiInput, setGeminiInput] = useState(geminiKey);
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [geminiSaved, setGeminiSaved] = useState(false);
-
-  React.useEffect(() => {
-    setGeminiInput(geminiKey);
-  }, [geminiKey]);
+  const { isAvailable: isAiAvailable } = useGeminiConfig();
 
   // Profile edit state
   const [name, setName] = useState(user?.name || '');
@@ -389,7 +371,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 5. AI Receipt Scanner (Google Gemini) */}
+      {/* 5. AI Receipt Scanner (Server-Configured) */}
       <Card className="border-border/60 shadow-xs">
         <CardHeader className="p-5 pb-3">
           <div className="flex items-center justify-between">
@@ -397,125 +379,36 @@ export function SettingsPage() {
               <Sparkles className="h-4 w-4 text-[#0055FF] dark:text-[#3B82F6]" />
               <span>AI Receipt Scanner</span>
             </CardTitle>
-            <Badge variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
-              Google Gemini 1.5 Flash
+            <Badge
+              variant="outline"
+              className={cn(
+                'text-xs',
+                isAiAvailable
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                  : 'bg-muted text-muted-foreground border-border/60'
+              )}
+            >
+              {isAiAvailable ? 'Cloud AI Enabled' : 'Local OCR Only'}
             </Badge>
           </div>
           <CardDescription>
-            Power receipt scanning with Google&apos;s free Vision AI. Extracts itemized names, quantities, and GST/taxes with near-perfect accuracy across angled or folded paper.
+            High-accuracy multimodal receipt extraction powered by Google Gemini Vision on the Supabase Edge infrastructure.
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-5 pt-2 space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Key className="h-3.5 w-3.5" />
-                Gemini API Key
-              </span>
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary hover:underline flex items-center gap-1 font-normal"
-              >
-                <span>Get free key (No credit card)</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  type={showGeminiKey ? 'text' : 'password'}
-                  placeholder="AIzaSy..."
-                  value={geminiInput}
-                  onChange={(e) => {
-                    setGeminiInput(e.target.value);
-                    setGeminiTestResult(null);
-                  }}
-                  className="pr-10 font-mono text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowGeminiKey(!showGeminiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label={showGeminiKey ? 'Hide API key' : 'Show API key'}
-                >
-                  {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  if (!geminiInput.trim()) return;
-                  const res = await testGeminiKey(geminiInput.trim());
-                  setGeminiTestResult(res);
-                }}
-                disabled={isTestingGemini || !geminiInput.trim()}
-                className="shrink-0"
-              >
-                {isTestingGemini ? 'Testing...' : 'Test Key'}
-              </Button>
+        <CardContent className="p-5 pt-2 space-y-3">
+          <div className="p-3.5 rounded-xl border border-border/50 bg-muted/20 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-medium text-foreground">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>Centralized Server-Side Security</span>
             </div>
-
-            {geminiTestResult && (
-              <p
-                className={cn(
-                  'text-xs font-medium flex items-center gap-1.5',
-                  geminiTestResult.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
-                )}
-              >
-                {geminiTestResult.success ? (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                ) : (
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                )}
-                <span>{geminiTestResult.message}</span>
-              </p>
-            )}
-
-            {geminiSaved && (
-              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Gemini API key saved! AI Smart Scan is now active.</span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-border/40">
-            <p className="text-xs text-muted-foreground">
-              Google provides <strong>1,500 free scans/day</strong>. Key is stored locally in your browser.
-            </p>
-            <div className="flex items-center gap-2">
-              {geminiKey && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    clearGeminiKey();
-                    setGeminiInput('');
-                    setGeminiTestResult(null);
-                  }}
-                  className="text-xs text-destructive hover:text-destructive"
-                >
-                  Remove Key
-                </Button>
+            <p className="text-muted-foreground leading-relaxed">
+              Gemini Vision credentials are configured securely in server-side Supabase Edge secrets and are never exposed to browser clients.
+              {!isAiAvailable && (
+                <span className="block mt-1 text-primary font-medium">
+                  Sign in with an account to unlock AI receipt scanning, or continue using fast Local OCR in Guest Mode.
+                </span>
               )}
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  saveGeminiKey(geminiInput.trim());
-                  setGeminiSaved(true);
-                  setTimeout(() => setGeminiSaved(false), 3000);
-                }}
-                disabled={!geminiInput.trim() || geminiInput === geminiKey}
-              >
-                Save Key
-              </Button>
-            </div>
+            </p>
           </div>
         </CardContent>
       </Card>
