@@ -59,20 +59,39 @@ export class GeminiReceiptService {
     );
 
     if (functionError) {
-      // Check for specific HTTP status codes if available
-      const status = (functionError as any)?.context?.status;
-      const message = functionError.message || 'Failed to scan receipt with AI';
+      let detailedMessage = functionError.message || 'Failed to scan receipt with AI';
+      try {
+        const ctx = (functionError as any)?.context;
+        if (ctx) {
+          if (typeof ctx.json === 'function') {
+            const body = await ctx.json();
+            if (body?.error) detailedMessage = body.error;
+          } else if (typeof ctx.text === 'function') {
+            const text = await ctx.text();
+            try {
+              const body = JSON.parse(text);
+              if (body?.error) detailedMessage = body.error;
+            } catch {
+              if (text) detailedMessage = text;
+            }
+          }
+        }
+      } catch {
+        // Fallback to functionError.message
+      }
 
-      if (status === 401 || message.includes('Unauthorized')) {
+      const status = (functionError as any)?.context?.status;
+
+      if (status === 401 || detailedMessage.includes('Unauthorized')) {
         throw new Error('Authentication expired or invalid. Please sign in or use Local OCR.');
       }
-      if (status === 429 || message.includes('Rate limit')) {
+      if (status === 429 || detailedMessage.includes('Rate limit')) {
         throw new Error('AI rate limit reached. Please wait a moment or use Local OCR.');
       }
-      if (status === 503 || message.includes('unavailable')) {
+      if (status === 503 || detailedMessage.includes('unavailable')) {
         throw new Error('AI receipt scanning is currently unavailable. Please use Local OCR.');
       }
-      throw new Error(message);
+      throw new Error(detailedMessage);
     }
 
     // 4. Handle response data

@@ -94,7 +94,8 @@ serve(async (req: Request) => {
     }
 
     // 3. Verify Server-Side Gemini API Key Secret
-    const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+    const rawApiKey = Deno.env.get("GEMINI_API_KEY");
+    const apiKey = rawApiKey ? rawApiKey.replace(/^["']|["']$/g, "").trim() : "";
     if (!apiKey) {
       return new Response(
         JSON.stringify({
@@ -104,8 +105,16 @@ serve(async (req: Request) => {
       );
     }
 
-    // Configurable Gemini model ID (defaults to modern gemini-2.5-flash)
-    const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-2.5-flash";
+    // Configurable Gemini model ID with fallback array
+    const configuredModel = Deno.env.get("GEMINI_MODEL")?.replace(/^["']|["']$/g, "").trim();
+    const candidateModels = [
+      configuredModel,
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+    ].filter(Boolean) as string[];
+    const uniqueModels = Array.from(new Set(candidateModels));
 
     // 4. Parse and Validate Request Payload
     let bodyText: string;
@@ -212,54 +221,68 @@ Rules:
       },
     };
 
-    // 6. Call Google Gemini API with 25-second timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    // 6. Call Google Gemini API (tries candidate models if a model returns 404)
+    let lastError = "Failed to connect to Gemini Vision API";
+    let geminiJson: any = null;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    for (const targetModel of uniqueModels) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-    let geminiRes: Response;
-    try {
-      geminiRes = await fetch(geminiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(geminiPayload),
-        signal: controller.signal,
-      });
-    } catch (fetchErr: any) {
-      clearTimeout(timeoutId);
-      if (fetchErr?.name === "AbortError") {
+      try {
+        const geminiRes = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(geminiPayload),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (geminiRes.ok) {
+          geminiJson = await geminiRes.json();
+          break; // Success!
+        }
+
+        const errBody = await geminiRes.json().catch(() => null);
+        const errMsg = errBody?.error?.message || `Gemini API returned status ${geminiRes.status}`;
+
+        if (geminiRes.status === 404) {
+          console.warn(`Model ${targetModel} returned 404. Trying next model candidate...`);
+          lastError = errMsg;
+          continue;
+        }
+
+        if (geminiRes.status === 429) {
+          return new Response(
+            JSON.stringify({ error: "Gemini quota or rate limit reached. Please try again shortly or use local OCR." }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         return new Response(
-          JSON.stringify({ error: "Gemini Vision API request timed out after 25 seconds. Please use local OCR." }),
-          { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: `AI Vision processing error: ${errMsg}` }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId);
+        if (fetchErr?.name === "AbortError") {
+          return new Response(
+            JSON.stringify({ error: "Gemini Vision API request timed out after 25 seconds. Please use local OCR." }),
+            { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        lastError = fetchErr?.message || "Network error connecting to Gemini";
       }
-      return new Response(
-        JSON.stringify({ error: `Network error connecting to Gemini Vision: ${fetchErr?.message || "Unknown error"}` }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    } finally {
-      clearTimeout(timeoutId);
     }
 
-    if (!geminiRes.ok) {
-      const errBody = await geminiRes.json().catch(() => null);
-      const errMsg = errBody?.error?.message || `Gemini API returned status ${geminiRes.status}`;
-
-      if (geminiRes.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Gemini quota or rate limit reached. Please try again shortly or use local OCR." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
+    if (!geminiJson) {
       return new Response(
-        JSON.stringify({ error: `AI Vision processing error: ${errMsg}` }),
+        JSON.stringify({ error: `AI Vision processing error: ${lastError}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const geminiJson = await geminiRes.json();
     const textOutput = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!textOutput) {
