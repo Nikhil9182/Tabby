@@ -1,7 +1,7 @@
 {
   "name": "tabby",
-  "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "license": "MIT",
   "homepage": "https://nikhil9182.github.io/Tabby/",
   "type": "module",
   "scripts": {

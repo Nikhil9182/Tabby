@@ -1,0 +1,62 @@
+name: 🐛 Bug Report
+description: File a bug report to help us improve Tabby
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide as much detail as possible.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: When I try to split a receipt with 3 friends...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this behavior?
+      placeholder: |
+        1. Go to 'Expenses' -> 'New Expense'
+        2. Click 'Scan Receipt'
+        3. Upload an image
+        4. See discrepancy
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      description: Were you using Tabby in Guest Mode or Cloud (Signed in)?
+      options:
+        - "Guest Mode (IndexedDB)"
+        - "Signed in (Google OAuth / Supabase)"
+        - "Both / Unsure"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser & OS
+      description: Which browser and OS are you using?
+      placeholder: Chrome 134 on macOS / Safari on iOS 18 / Firefox on Windows 11
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or Logs
+      description: Drag and drop screenshots or paste browser console errors here.
+    validations:
+      required: false

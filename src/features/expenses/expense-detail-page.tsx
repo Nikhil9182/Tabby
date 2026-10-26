@@ -81,6 +81,36 @@ export function ExpenseDetailPage() {
     isDeleting: isDeletingReceipt,
   } = useReceipt(expense?.id);
 
+  const receiptItemsData = useMemo(() => {
+    // 1. If structured items exist on the receipt record, prefer them
+    if (receipt?.items && receipt.items.length > 0) {
+      return {
+        hasItems: true,
+        items: receipt.items,
+        subtotalMinor: receipt.subtotalMinor,
+        taxMinor: receipt.taxMinor,
+        discountMinor: receipt.discountMinor,
+        tipMinor: receipt.tipMinor,
+        serviceChargeMinor: receipt.serviceChargeMinor,
+        totalMinor: receipt.totalMinor,
+        currency: expense?.originalCurrency,
+        userNotes: expense?.notes || undefined,
+      };
+    }
+    // 2. Otherwise fall back to extracting from legacy notes
+    return extractReceiptItems(expense?.notes, expense?.originalCurrency);
+  }, [
+    receipt?.items,
+    receipt?.subtotalMinor,
+    receipt?.taxMinor,
+    receipt?.discountMinor,
+    receipt?.tipMinor,
+    receipt?.serviceChargeMinor,
+    receipt?.totalMinor,
+    expense?.notes,
+    expense?.originalCurrency,
+  ]);
+
   const handleAttachFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !expense) return;
@@ -161,36 +191,6 @@ export function ExpenseDetailPage() {
     expense.reportingAmountMinor !== undefined &&
     !!expense.exchangeRate &&
     !['identity', 'unavailable'].includes(expense.exchangeRateSource || 'identity');
-
-  const receiptItemsData = useMemo(() => {
-    // 1. If structured items exist on the receipt record, prefer them
-    if (receipt?.items && receipt.items.length > 0) {
-      return {
-        hasItems: true,
-        items: receipt.items,
-        subtotalMinor: receipt.subtotalMinor,
-        taxMinor: receipt.taxMinor,
-        discountMinor: receipt.discountMinor,
-        tipMinor: receipt.tipMinor,
-        serviceChargeMinor: receipt.serviceChargeMinor,
-        totalMinor: receipt.totalMinor,
-        currency: expense?.originalCurrency,
-        userNotes: expense?.notes || undefined,
-      };
-    }
-    // 2. Otherwise fall back to extracting from legacy notes
-    return extractReceiptItems(expense?.notes, expense?.originalCurrency);
-  }, [
-    receipt?.items,
-    receipt?.subtotalMinor,
-    receipt?.taxMinor,
-    receipt?.discountMinor,
-    receipt?.tipMinor,
-    receipt?.serviceChargeMinor,
-    receipt?.totalMinor,
-    expense?.notes,
-    expense?.originalCurrency,
-  ]);
 
   const handleDelete = async () => {
     try {

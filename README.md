@@ -9,8 +9,9 @@
 A Splitwise-style expense tracker for friends, flatmates and trips, with real multi-currency support and dual-engine AI & on-device receipt scanning.<br />
 Built with React 19, TypeScript, Tailwind CSS 4, Supabase, and Google Gemini Vision. Fork it and make it your own.
 
-[**Live Demo**](https://nikhil9182.github.io/Tabby/) · [Features](#-features) · [Screenshots](#-screenshots) · [Quick Start](#-quick-start) · [Receipt Scanning](#-ai--local-receipt-scanning) · [How It Works](#-how-it-works) · [Architecture](#-architecture)
+[**Live Demo**](https://nikhil9182.github.io/Tabby/) · [Features](#-features) · [Screenshots](#-screenshots) · [Quick Start](#-quick-start) · [Receipt Scanning](#-ai--local-receipt-scanning) · [Contributing](CONTRIBUTING.md) · [Architecture](#-architecture)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
@@ -256,6 +257,20 @@ supabase/
 - Server-side Gemini API credentials remain strictly confined to Supabase Secrets; zero API keys are bundled or stored in the browser.
 - Receipt images processed with local OCR run entirely on your device in browser memory.
 - Zero tracking or analytics cookies. Full policy available in [`public/privacy.html`](public/privacy.html).
+
+---
+
+## 🤝 Contributing
+
+Contributions are warmly welcome! Whether it's adding a new feature, fixing a bug, expanding test coverage, or adding translations, we'd love your help.
+
+Check out our [**Contributing Guide (CONTRIBUTING.md)**](CONTRIBUTING.md) to get started in under 2 minutes with zero setup friction (Guest Mode runs 100% locally with no API keys needed).
+
+---
+
+## 📄 License
+
+Tabby is open-source software licensed under the [MIT License](LICENSE).
 
 ---
 
