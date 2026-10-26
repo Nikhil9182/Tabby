@@ -1,16 +1,16 @@
-# Contributing to Tabby 🐱
+# Contributing to Tabby
 
-Thank you for your interest in contributing to Tabby! Tabby is an open-source, privacy-first, multi-currency expense-sharing and bill-splitting progressive web app.
+Thank you for your interest in contributing to Tabby. Tabby is an open-source, privacy-first, multi-currency expense-sharing and bill-splitting progressive web application.
 
-We welcome all kinds of contributions: bug fixes, new features, UI/UX polish, performance enhancements, documentation improvements, and translations.
+We welcome all kinds of contributions: bug fixes, new features, UI improvements, performance enhancements, documentation updates, and translations.
 
 ---
 
-## ⚡ Zero-Friction Quickstart (No API Keys Required)
+## Local Setup (No API Keys Required)
 
-You do **not** need a Supabase backend or any API keys to start developing on Tabby!
+You do not need a Supabase backend or API keys to start developing on Tabby.
 
-Tabby features a complete **Guest Mode** powered by browser IndexedDB. You can develop, test, and preview the full UI, mathematical split algorithms, debt simplification, spending reports, and on-device receipt scanning 100% locally.
+Tabby features a full Guest Mode powered by browser IndexedDB. You can develop, test, and preview the complete UI, mathematical split algorithms, debt simplification, spending reports, and on-device receipt scanning 100% locally.
 
 ```bash
 # 1. Fork and clone the repository
@@ -24,15 +24,15 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser. Select **"Continue as Guest"** to immediately access the full application with local data persistence.
+Open [http://localhost:5173](http://localhost:5173) in your browser. Select **"Continue as Guest"** to immediately access the application with local data persistence.
 
 ---
 
-## 🏗️ Architecture & Project Structure
+## Architecture & Project Structure
 
 Tabby separates pure domain logic from framework and UI components:
 
-```
+```text
 src/
 ├── domain/             # Pure TypeScript domain logic (100% testable, zero DOM/React deps)
 │   ├── balance-engine.ts       # Greedy debt simplification algorithm
@@ -62,9 +62,9 @@ src/
 
 ---
 
-## 🧪 Testing & Code Quality
+## Testing & Code Quality
 
-Tabby maintains high automated test coverage. Before submitting a PR, ensure that all checks pass cleanly:
+Tabby maintains high automated test coverage. Before submitting a pull request, ensure all checks pass cleanly:
 
 ```bash
 # Run unit & integration tests (330+ Vitest tests)
@@ -87,7 +87,7 @@ npm run build
 
 ---
 
-## 🚀 Pull Request Workflow
+## Pull Request Workflow
 
 1. **Fork the repo** and create your branch from `master`:
    ```bash
@@ -99,98 +99,69 @@ npm run build
 2. **Make your changes**:
    - Write clean, modern TypeScript and React code.
    - Use Tailwind CSS 4 utility classes matching the existing design language.
-   - Keep commits focused and descriptive (e.g. `feat(receipts): add image rotate tool before scanning` or `fix(splits): correct fractional distribution with 3 payers`).
-   - Do **not** include automated assistant attribution trailers (such as `Co-Authored-By: Claude`) in commit messages.
+   - Keep commits focused and descriptive (e.g. `feat(receipts): add image rotate tool before scanning`).
+   - Do not include automated assistant attribution trailers (such as `Co-Authored-By: Claude`) in commit messages.
 
 3. **Verify locally**:
-   Ensure `npm test` and `npx tsc -b` exit with code 0.
+   Ensure `npm test`, `npm run lint`, and `npx tsc -b` exit with code 0.
 
-4. **Push to your fork and submit a Pull Request**:
+4. **Submit a Pull Request**:
    - Fill out the PR template describing the problem and your solution.
-   - Link any relevant issues (e.g. `Closes #42`).
+   - Link any relevant issues (e.g. `Closes #1`).
    - GitHub Actions will automatically run CI checks against your PR.
 
 ---
 
-## 💡 Good First Issues & Roadmap
+## Good First Issues & Roadmap
 
-Contributors actively search GitHub using the filter `is:issue is:open label:"good first issue"`. Below are 5 high-impact, well-scoped tasks with instructions on where in the code to look. 
+Beginner-friendly tasks are actively tracked in GitHub Issues with the `good first issue` label:
 
-If you'd like to work on one, feel free to open a PR or comment on the corresponding issue!
-
----
-
-### 1. 🌐 Internationalization (i18n): Multi-Language Support
+### 1. Internationalization (i18n): Multi-Language Support ([#1](https://github.com/Nikhil9182/Tabby/issues/1))
 * **Labels**: `good first issue`, `enhancement`, `help wanted`
 * **Goal**: Support Spanish, German, French, or Hindi locale strings so non-English speakers can use Tabby comfortably.
-* **Where to look in the code**:
-  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Add a "Language" selector in the Preferences section alongside the existing Display Currency selector.
-  * [`src/domain/money/money.ts`](src/domain/money/money.ts): Already contains locale-aware currency and decimal formatting utilities (`Intl.NumberFormat`).
-  * Create `src/i18n/`: Add lightweight JSON dictionary maps (`en.json`, `es.json`, `de.json`, `fr.json`, `hi.json`) and a typed `useTranslation()` hook or provider in [`src/app/providers.tsx`](src/app/providers.tsx).
-* **Acceptance Criteria**:
-  * Key navigation tabs (Expenses, Groups, Friends, Reports, Settings) and common buttons ("Add Expense", "Settle Up") update dynamically upon selecting a language.
-  * Selection persists in `localStorage` or user profile settings.
+* **Code locations**:
+  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Add a "Language" selector in Preferences.
+  * [`src/domain/money/money.ts`](src/domain/money/money.ts): Locale-aware currency and decimal formatting utilities.
+  * Add translation dictionary maps in `src/i18n/` and a typed provider in [`src/app/providers.tsx`](src/app/providers.tsx).
 
----
+### 2. Export to PDF: Downloadable & Printable Group Summary ([#2](https://github.com/Nikhil9182/Tabby/issues/2))
+* **Labels**: `good first issue`, `enhancement`, `help wanted`
+* **Goal**: Add a "Print / Download PDF" summary option alongside existing CSV and JSON backup exports.
+* **Code locations**:
+  * [`src/features/groups/group-detail-page.tsx`](src/features/groups/group-detail-page.tsx): Header action for summary export.
+  * [`src/features/reports/reports-page.tsx`](src/features/reports/reports-page.tsx): Monthly spending report print layout.
+  * Uses a clean `@media print` print stylesheet or client-side rendering.
 
-### 2. 📄 Export to PDF: Downloadable & Printable Group Summary
-* **Labels**: `good first issue`, `enhancement`
-* **Goal**: Add a "Print / Download PDF" summary option alongside the existing CSV and JSON backup exports.
-* **Where to look in the code**:
-  * [`src/features/groups/group-detail-page.tsx`](src/features/groups/group-detail-page.tsx): Add an "Export Summary as PDF" button in group header actions.
-  * [`src/features/reports/reports-page.tsx`](src/features/reports/reports-page.tsx): Add a monthly spending report print button.
-  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Card 4 ("Data Export") currently exports CSV and full JSON backup.
-  * Implementation can use a clean, styled `@media print` CSS print stylesheet or client-side PDF utility.
-* **Acceptance Criteria**:
-  * Generates a clean, formatted layout containing: Group/Trip title, date range, expense breakdown, and the final simplified "Who Owes Whom" debt settlement table.
-
----
-
-### 3. ✂️ Receipt Image Pre-Crop / Rotate Tool
-* **Labels**: `good first issue`, `enhancement`, `ai-vision`
-* **Goal**: When users take mobile camera photos of receipts, they can sometimes be rotated 90° or have noisy table backgrounds. Provide a quick interactive canvas rotate and crop tool prior to triggering AI/OCR scanning.
-* **Where to look in the code**:
-  * [`src/components/receipts/receipt-scanner-dialog.tsx`](src/components/receipts/receipt-scanner-dialog.tsx): Step 1 (Upload/Preview step).
-  * [`src/services/image/image-compression.ts`](src/services/image/image-compression.ts): Already handles in-memory `<canvas>` resizing and compression. Can easily incorporate a 90° rotation transform and crop bounding coordinates.
-* **Acceptance Criteria**:
-  * Add a 90° rotate button (`RotateCw` icon from Lucide) and an optional crop box.
-  * The resulting cropped/rotated canvas output is passed to `parseReceipt()`.
-
----
-
-### 4. 🏷️ Custom Expense Categories & Emoji Picker
-* **Labels**: `good first issue`, `enhancement`
-* **Goal**: Allow users to define custom expense categories (e.g. "Rent 🏠", "Pet Care 🐱", "Concert 🎟️") beyond the default predefined categories.
-* **Where to look in the code**:
-  * [`src/domain/models/types.ts`](src/domain/models/types.ts): Check the `Category` interface (`id`, `name`, `icon`, `color`).
+### 3. Custom Expense Categories ([#3](https://github.com/Nikhil9182/Tabby/issues/3))
+* **Labels**: `good first issue`, `enhancement`, `help wanted`
+* **Goal**: Allow users to define custom expense categories (e.g. "Rent", "Pet Care", "Concert") beyond the default predefined categories.
+* **Code locations**:
+  * [`src/domain/models/types.ts`](src/domain/models/types.ts): `Category` interface.
   * [`src/services/guest/indexed-db.ts`](src/services/guest/indexed-db.ts): Dexie `categories` store for guest mode.
-  * [`src/features/expenses/expense-form.tsx`](src/features/expenses/expense-form.tsx): Category selector dropdown with a `+ Add Custom Category` modal trigger.
-  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Category management section.
-* **Acceptance Criteria**:
-  * Custom categories persist locally in IndexedDB (for guests) and sync with Supabase (for cloud users).
-  * Custom categories appear with their custom icon in the Expense list, expense details, and report charts.
+  * [`src/features/expenses/expense-form.tsx`](src/features/expenses/expense-form.tsx): Category selector dropdown with "+ Add Custom Category" option.
 
----
+### 4. Group QR Code Sharing ([#4](https://github.com/Nikhil9182/Tabby/issues/4))
+* **Labels**: `good first issue`, `enhancement`, `help wanted`
+* **Goal**: Enable friends to scan a QR code from another device to immediately join a shared group without typing URLs.
+* **Code locations**:
+  * [`src/features/groups/group-detail-page.tsx`](src/features/groups/group-detail-page.tsx): "Share QR Code" button.
+  * Deep link route: `#/groups/:id` with SVG QR code rendering.
 
-### 5. 📱 Group QR Code Sharing
+### 5. Receipt Image Pre-Crop / Rotate Tool ([#5](https://github.com/Nikhil9182/Tabby/issues/5))
 * **Labels**: `good first issue`, `enhancement`
-* **Goal**: When friends are hanging out in person, let them scan a QR code from a friend's phone to instantly open Tabby and join the group with zero typing.
-* **Where to look in the code**:
-  * [`src/features/groups/group-detail-page.tsx`](src/features/groups/group-detail-page.tsx): Add a "Share QR Code" button next to "Add Expense" or in the group menu.
-  * Deep link route: Formatted as `${baseUrl}#/groups/:id` or an invite code deep link.
-  * Render an SVG QR code modal with a "Copy Link" fallback button.
-* **Acceptance Criteria**:
-  * Clicking "Share QR Code" opens a dialog displaying a crisp QR code.
-  * Scanning the QR code with another mobile phone opens Tabby and displays the group view.
+* **Goal**: Provide an interactive 90-degree rotate and crop tool in the receipt preview dialog prior to OCR or AI scanning.
+* **Code locations**:
+  * [`src/components/receipts/receipt-scanner-dialog.tsx`](src/components/receipts/receipt-scanner-dialog.tsx): Step 1 (Upload/Preview).
+  * [`src/services/image/image-compression.ts`](src/services/image/image-compression.ts): In-memory canvas manipulation.
 
 ---
 
-## 📋 Code of Conduct
+## Code of Conduct
 
-Tabby is an open and welcoming community. Please treat fellow contributors with respect, patience, and empathy. Be kind, constructive in code reviews, and focus on helping each other build great software.
+Tabby is an open and welcoming project. Treat fellow contributors with respect, patience, and empathy. Be constructive in code reviews and help newcomers get started.
 
 ---
 
-## ❓ Need Help?
+## Questions & Support
 
-Feel free to open an issue or start a discussion on GitHub if you have questions or want to propose an architecture change before writing code. We're happy to help!
+Feel free to open an issue or discussion on GitHub if you have questions or want to propose an architecture change before writing code.
