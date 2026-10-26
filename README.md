@@ -266,6 +266,15 @@ Contributions are warmly welcome! Whether it's adding a new feature, fixing a bu
 
 Check out our [**Contributing Guide (CONTRIBUTING.md)**](CONTRIBUTING.md) to get started in under 2 minutes with zero setup friction (Guest Mode runs 100% locally with no API keys needed).
 
+Looking for a place to jump in? Check out our curated **Good First Issues**:
+- 🌐 **Internationalization (i18n)**: Support Spanish, German, French, or Hindi locale strings.
+- 📄 **Export to PDF**: Add a "Print / Download PDF" summary option alongside CSV and JSON exports.
+- ✂️ **Receipt Image Pre-Crop / Rotate**: Add an interactive canvas rotate/crop tool in `receipt-scanner-dialog.tsx` prior to scanning.
+- 🏷️ **Custom Categories & Emoji Picker**: Allow users to add custom expense categories with custom Lucide or emoji icons.
+- 📱 **Group QR Code Sharing**: Generate a quick QR code with a deep-link invite to a group.
+
+See [**CONTRIBUTING.md**](CONTRIBUTING.md) for detailed code pointers for each task!
+
 ---
 
 ## 📄 License

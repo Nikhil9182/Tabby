@@ -112,16 +112,76 @@ npm run build
 
 ---
 
-## 💡 Good First Issue Ideas
+## 💡 Good First Issues & Roadmap
 
-Looking for something to work on? Here are areas where contributions are actively welcomed:
+Contributors actively search GitHub using the filter `is:issue is:open label:"good first issue"`. Below are 5 high-impact, well-scoped tasks with instructions on where in the code to look. 
 
-- 🌐 **Internationalization (i18n)**: Adding multilingual support (Spanish, French, German, Hindi, Japanese, etc.).
-- 📄 **PDF / Printable Export**: Generating a printable or PDF summary sheet for group trips or monthly flatmate accounts.
-- ✂️ **Receipt Pre-Scan Tools**: Adding an interactive image rotation and cropping canvas to [`receipt-scanner-dialog.tsx`](src/components/receipts/receipt-scanner-dialog.tsx).
-- ⌨️ **Keyboard Shortcuts**: Adding global shortcuts (<kbd>N</kbd> for new expense, <kbd>/</kbd> to search, <kbd>Esc</kbd> to dismiss modals).
-- 🏷️ **Custom Category Icons**: Letting users define custom expense categories with custom icons or emoji.
-- 📱 **PWA Polish**: Improving offline caching strategies or add-to-homescreen banners.
+If you'd like to work on one, feel free to open a PR or comment on the corresponding issue!
+
+---
+
+### 1. 🌐 Internationalization (i18n): Multi-Language Support
+* **Labels**: `good first issue`, `enhancement`, `help wanted`
+* **Goal**: Support Spanish, German, French, or Hindi locale strings so non-English speakers can use Tabby comfortably.
+* **Where to look in the code**:
+  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Add a "Language" selector in the Preferences section alongside the existing Display Currency selector.
+  * [`src/domain/money/money.ts`](src/domain/money/money.ts): Already contains locale-aware currency and decimal formatting utilities (`Intl.NumberFormat`).
+  * Create `src/i18n/`: Add lightweight JSON dictionary maps (`en.json`, `es.json`, `de.json`, `fr.json`, `hi.json`) and a typed `useTranslation()` hook or provider in [`src/app/providers.tsx`](src/app/providers.tsx).
+* **Acceptance Criteria**:
+  * Key navigation tabs (Expenses, Groups, Friends, Reports, Settings) and common buttons ("Add Expense", "Settle Up") update dynamically upon selecting a language.
+  * Selection persists in `localStorage` or user profile settings.
+
+---
+
+### 2. 📄 Export to PDF: Downloadable & Printable Group Summary
+* **Labels**: `good first issue`, `enhancement`
+* **Goal**: Add a "Print / Download PDF" summary option alongside the existing CSV and JSON backup exports.
+* **Where to look in the code**:
+  * [`src/features/groups/group-detail-page.tsx`](src/features/groups/group-detail-page.tsx): Add an "Export Summary as PDF" button in group header actions.
+  * [`src/features/reports/reports-page.tsx`](src/features/reports/reports-page.tsx): Add a monthly spending report print button.
+  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Card 4 ("Data Export") currently exports CSV and full JSON backup.
+  * Implementation can use a clean, styled `@media print` CSS print stylesheet or client-side PDF utility.
+* **Acceptance Criteria**:
+  * Generates a clean, formatted layout containing: Group/Trip title, date range, expense breakdown, and the final simplified "Who Owes Whom" debt settlement table.
+
+---
+
+### 3. ✂️ Receipt Image Pre-Crop / Rotate Tool
+* **Labels**: `good first issue`, `enhancement`, `ai-vision`
+* **Goal**: When users take mobile camera photos of receipts, they can sometimes be rotated 90° or have noisy table backgrounds. Provide a quick interactive canvas rotate and crop tool prior to triggering AI/OCR scanning.
+* **Where to look in the code**:
+  * [`src/components/receipts/receipt-scanner-dialog.tsx`](src/components/receipts/receipt-scanner-dialog.tsx): Step 1 (Upload/Preview step).
+  * [`src/services/image/image-compression.ts`](src/services/image/image-compression.ts): Already handles in-memory `<canvas>` resizing and compression. Can easily incorporate a 90° rotation transform and crop bounding coordinates.
+* **Acceptance Criteria**:
+  * Add a 90° rotate button (`RotateCw` icon from Lucide) and an optional crop box.
+  * The resulting cropped/rotated canvas output is passed to `parseReceipt()`.
+
+---
+
+### 4. 🏷️ Custom Expense Categories & Emoji Picker
+* **Labels**: `good first issue`, `enhancement`
+* **Goal**: Allow users to define custom expense categories (e.g. "Rent 🏠", "Pet Care 🐱", "Concert 🎟️") beyond the default predefined categories.
+* **Where to look in the code**:
+  * [`src/domain/models/types.ts`](src/domain/models/types.ts): Check the `Category` interface (`id`, `name`, `icon`, `color`).
+  * [`src/services/guest/indexed-db.ts`](src/services/guest/indexed-db.ts): Dexie `categories` store for guest mode.
+  * [`src/features/expenses/expense-form.tsx`](src/features/expenses/expense-form.tsx): Category selector dropdown with a `+ Add Custom Category` modal trigger.
+  * [`src/features/settings/settings-page.tsx`](src/features/settings/settings-page.tsx): Category management section.
+* **Acceptance Criteria**:
+  * Custom categories persist locally in IndexedDB (for guests) and sync with Supabase (for cloud users).
+  * Custom categories appear with their custom icon in the Expense list, expense details, and report charts.
+
+---
+
+### 5. 📱 Group QR Code Sharing
+* **Labels**: `good first issue`, `enhancement`
+* **Goal**: When friends are hanging out in person, let them scan a QR code from a friend's phone to instantly open Tabby and join the group with zero typing.
+* **Where to look in the code**:
+  * [`src/features/groups/group-detail-page.tsx`](src/features/groups/group-detail-page.tsx): Add a "Share QR Code" button next to "Add Expense" or in the group menu.
+  * Deep link route: Formatted as `${baseUrl}#/groups/:id` or an invite code deep link.
+  * Render an SVG QR code modal with a "Copy Link" fallback button.
+* **Acceptance Criteria**:
+  * Clicking "Share QR Code" opens a dialog displaying a crisp QR code.
+  * Scanning the QR code with another mobile phone opens Tabby and displays the group view.
 
 ---
 
