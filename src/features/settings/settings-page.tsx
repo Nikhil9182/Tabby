@@ -11,11 +11,7 @@ import {
   CheckCircle2,
   LogOut,
   LogIn,
-  Coffee,
-  Heart,
-  ExternalLink,
   Sparkles,
-
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -410,37 +406,6 @@ export function SettingsPage() {
               )}
             </p>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* 6. Support Tabby */}
-      <Card className="border-border/60 shadow-xs bg-gradient-to-br from-amber-500/5 via-transparent to-transparent">
-        <CardHeader className="p-5 pb-3">
-          <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-            <Coffee className="h-4 w-4 text-amber-500" />
-            <span>Support Tabby</span>
-          </CardTitle>
-          <CardDescription>
-            Tabby is 100% free, private, and ad-free. If it saved you time or settled a bill without headaches, consider buying a coffee!
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-5 pt-1">
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="gap-2 border-amber-500/30 hover:border-amber-500/50 hover:bg-amber-500/10 text-foreground"
-          >
-            <a
-              href={import.meta.env.VITE_DONATION_URL || 'https://buymeacoffee.com'}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Heart className="h-3.5 w-3.5 text-rose-500 fill-rose-500" />
-              <span>Buy Me a Coffee</span>
-              <ExternalLink className="h-3 w-3 text-muted-foreground ml-0.5" />
-            </a>
-          </Button>
         </CardContent>
       </Card>
 
