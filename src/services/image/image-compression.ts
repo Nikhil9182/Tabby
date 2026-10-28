@@ -209,7 +209,7 @@ export async function compressImageForStorage(
 
 export interface ReceiptImageTransformOptions {
   /** Clockwise rotation in 90-degree increments. */
-  rotation?: 0 | 90 | 180 | 270;
+  rotation?: number;
   /** Center crop fraction from 0 to 1; 1 keeps the full image. */
   cropRatio?: number;
 }
