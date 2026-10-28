@@ -138,15 +138,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         rotation,
         cropRatio: cropEnabled ? 0.9 : 1,
       });
-      setSelectedFile(editedFile);
       setOriginalFile(editedFile);
 
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    const targetCurrency = contextCurrency || defaultCurrency;
-
-    try {
       let parsed: ParsedReceipt | null = null;
 
       // 1. Attempt cloud vision scanning if available
