@@ -205,3 +205,91 @@ export async function compressImageForStorage(
     }
   }
 }
+
+
+export interface ReceiptImageTransformOptions {
+  /** Clockwise rotation in 90-degree increments. */
+  rotation?: number;
+  /** Center crop fraction from 0 to 1; 1 keeps the full image. */
+  cropRatio?: number;
+}
+
+/**
+ * Applies the user's rotation and centered crop to a receipt image in memory.
+ * The returned file is suitable for OCR/AI input and receipt attachment.
+ */
+export async function transformReceiptImage(
+  source: File,
+  options: ReceiptImageTransformOptions = {}
+): Promise<File> {
+  const rotation = options.rotation ?? 0;
+  const cropRatio = Math.min(1, Math.max(0.1, options.cropRatio ?? 1));
+
+  if (![0, 90, 180, 270].includes(rotation)) {
+    throw new Error('Receipt rotation must be a multiple of 90 degrees.');
+  }
+
+  if (rotation === 0 && cropRatio === 1) return source;
+  if (typeof document === 'undefined') return source;
+
+  let image: CanvasImageSource;
+  let width: number;
+  let height: number;
+  let bitmap: ImageBitmap | null = null;
+  let objectUrl: string | null = null;
+
+  try {
+    if (typeof createImageBitmap === 'function') {
+      bitmap = await createImageBitmap(source, { imageOrientation: 'from-image' });
+      image = bitmap;
+      width = bitmap.width;
+      height = bitmap.height;
+    } else {
+      objectUrl = URL.createObjectURL(source);
+      const element = new Image();
+      await new Promise<void>((resolve, reject) => {
+        element.onload = () => resolve();
+        element.onerror = () => reject(new Error('Could not load receipt image.'));
+        element.src = objectUrl!;
+      });
+      image = element;
+      width = element.naturalWidth;
+      height = element.naturalHeight;
+    }
+
+    const radians = (rotation * Math.PI) / 180;
+    const rotatedWidth = rotation % 180 === 0 ? width : height;
+    const rotatedHeight = rotation % 180 === 0 ? height : width;
+    const outputWidth = Math.max(1, Math.round(rotatedWidth * cropRatio));
+    const outputHeight = Math.max(1, Math.round(rotatedHeight * cropRatio));
+    const canvas = document.createElement('canvas');
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas 2D context unavailable for receipt editing.');
+
+    if (source.type === 'image/jpeg') {
+      context.fillStyle = '#FFFFFF';
+      context.fillRect(0, 0, outputWidth, outputHeight);
+    }
+    context.translate(outputWidth / 2, outputHeight / 2);
+    context.rotate(radians);
+    context.drawImage(image, -width / 2, -height / 2, width, height);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result && result.size > 0) resolve(result);
+        else reject(new Error('Could not process receipt image.'));
+      }, source.type || 'image/jpeg');
+    });
+
+    return new File([blob], source.name, {
+      type: blob.type || source.type || 'image/jpeg',
+      lastModified: Date.now(),
+    });
+  } finally {
+    bitmap?.close();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}

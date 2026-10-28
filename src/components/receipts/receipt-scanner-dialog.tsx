@@ -23,11 +23,11 @@ import type {
   ReceiptSplitResult,
 } from '@/domain/receipts/types';
 import { Checkbox } from '@/components/ui/checkbox';
-import { compressImageForStorage } from '@/services/image/image-compression';
+import { compressImageForStorage, transformReceiptImage } from '@/services/image/image-compression';
 import { receiptService } from '@/services/receipts/receipt-service';
 import { geminiReceiptService } from '@/services/ai/gemini-receipt-service';
 import { useGeminiConfig } from '@/hooks/use-gemini-config';
-import { Sparkles, AlertCircle } from 'lucide-react';
+import { Sparkles, AlertCircle, RotateCw, Crop } from 'lucide-react';
 
 export type ReceiptFlowStep = 'upload' | 'review' | 'split';
 
@@ -67,6 +67,9 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
   const [step, setStep] = useState<ReceiptFlowStep>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [rotation, setRotation] = useState(0);
+  const [cropEnabled, setCropEnabled] = useState(false);
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [attachReceipt, setAttachReceipt] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -87,6 +90,8 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
       setStep('upload');
       setSelectedFile(null);
       setOriginalFile(null);
+      setRotation(0);
+      setCropEnabled(false);
       setAttachReceipt(true);
       setIsProcessing(false);
       setOcrProgress(null);
@@ -97,11 +102,30 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     }
   }, [isOpen]);
 
-  // Handle receipt recognition: tries cloud vision first (if available), automatically falls back to local OCR
-  const handleImageSelected = async (file: File) => {
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
+
+  const handleImageSelected = (file: File) => {
     setSelectedFile(file);
     setOriginalFile(file);
+    setRotation(0);
+    setCropEnabled(false);
     setOcrError(null);
+    setOcrProgress(null);
+    setParsedReceipt(null);
+  };
+
+  // Run OCR/AI only after the user has reviewed and edited the image.
+  const handleScanReceipt = async () => {
+    if (!selectedFile) return;
     setIsProcessing(true);
 
     const abortController = new AbortController();
@@ -110,6 +134,12 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
     const targetCurrency = contextCurrency || defaultCurrency;
 
     try {
+      const editedFile = await transformReceiptImage(selectedFile, {
+        rotation,
+        cropRatio: cropEnabled ? 0.9 : 1,
+      });
+      setOriginalFile(editedFile);
+
       let parsed: ParsedReceipt | null = null;
 
       // 1. Attempt cloud vision scanning if available
@@ -122,7 +152,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
         try {
           parsed = await geminiReceiptService.parseReceipt(
-            file,
+            editedFile,
             targetCurrency,
             abortController.signal
           );
@@ -148,7 +178,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
         });
 
         const rawData = await ocrService.recognize(
-          file,
+          editedFile,
           (p) => setOcrProgress({ ...p, message: 'Scanning receipt...' }),
           abortController.signal
         );
@@ -186,7 +216,7 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
 
   const handleRetryOcr = () => {
     if (selectedFile) {
-      handleImageSelected(selectedFile);
+      handleScanReceipt();
     }
   };
 
@@ -490,6 +520,63 @@ export const ReceiptScannerDialog: React.FC<ReceiptScannerDialogProps> = ({
                 onCancel={handleCancelOcr}
                 onRetry={handleRetryOcr}
               />
+
+              {selectedFile && previewUrl && !isProcessing && (
+                <div className="space-y-3 rounded-xl border border-border/70 bg-card p-3 sm:p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">Adjust receipt image</p>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRotation((value) => (value + 90) % 360)}
+                        aria-label="Rotate receipt 90 degrees clockwise"
+                      >
+                        <RotateCw className="mr-2 h-4 w-4" />
+                        Rotate 90°
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={cropEnabled ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setCropEnabled((value) => !value)}
+                        aria-pressed={cropEnabled}
+                        aria-label={cropEnabled ? 'Disable centered crop' : 'Crop receipt edges'}
+                      >
+                        <Crop className="mr-2 h-4 w-4" />
+                        {cropEnabled ? 'Crop on' : 'Crop edges'}
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Crop edges keeps the centered 90% of the image. Changes are applied before scanning.
+                  </p>
+                  <div className="flex max-h-72 justify-center overflow-hidden rounded-lg bg-muted/40 p-2">
+                    <div className="relative flex items-center justify-center overflow-hidden">
+                      <img
+                        src={previewUrl}
+                        alt="Receipt preview"
+                        className="max-h-64 max-w-full object-contain transition-transform"
+                        style={{ transform: `rotate(${rotation}deg)` }}
+                      />
+                      {cropEnabled && (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-[5%] border-2 border-dashed border-primary shadow-[0_0_0_999px_rgba(0,0,0,0.18)]"
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={handleScanReceipt}
+                  >
+                    Scan receipt
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
